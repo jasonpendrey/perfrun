@@ -1,0 +1,108 @@
+#!/bin/bash
+#set -x
+APP_HOST=
+APP_KEY=
+APP_SECRET=
+APP=
+PORT=
+IDENT=
+PASS=
+DISTO=BurUnixBench
+CREATE_TIME=
+
+while [[ $# > 1 ]]
+do
+    key="$1"
+
+    case $key in
+    -i|--ident)
+	IDENT="$2"
+	shift
+	;;
+    -p|--password)
+	PASS="$2"
+	shift
+	;;
+    -I|--instance)
+	INSTANCE="$2"
+	shift
+	;;
+    -D|--disto)
+	DISTO="$2"
+	shift
+	;;
+    -m|--mrc)
+        MRC="-m '$2'"
+	shift
+	;;
+    -n|--nrc)
+        NRC="-n '$2'"
+	shift
+	;;
+    -O|--objective)
+        OBJECTIVE="$2"
+	shift
+	;;
+    -P|--provider)
+	PROVIDER="-P '$2'"
+	shift
+	;;
+    -L|--location)
+	LOCATION="-L '$2'"
+	shift
+	;;
+    --port)
+	PORT="-p $2"
+	shift
+	;;
+    -H|--app-host)
+	APP_HOST="$2"
+	shift
+	;;
+    -K|--app-key)
+	APP_KEY="$2"
+	shift
+	;;
+    -S|--app-secret)
+	APP_SECRET="$2"
+	shift
+	;;
+     --create-time)
+       CREATE_TIME="-C $2"
+       shift
+       ;;
+    -h|--help)
+        echo "RunRemote [-i ident -p password -P provider -L location -O objective -m mrc -n nrc -I instance -H host -K burstorm-app-key -S burstorm-app-secret] [user@host]"
+	exit 0
+	;;
+    *)
+	echo "unknown option $1"
+	;;
+    esac
+    shift
+done
+SSH_HOST=$1
+if [ "$APP_HOST" = "" ]; then
+    APP_HOST=staging.burstorm.com
+fi
+if [ "$APP_KEY" != "" -a "$APP_SECRET" != "" ]; then
+    APP="-h $APP_HOST -u $APP_KEY -p $APP_SECRET"
+fi
+#DOWNLOAD_HOST=$APP_HOST
+DOWNLOAD_HOST=staging.burstorm.com
+CMD="TAR=\"${DISTO}-\`uname -m\`-\`uname\`.tgz\"; rm -rf \${TAR} ${DISTO}; which wget > /dev/null; wgs=\$?; which curl > /dev/null; cls=\$?; if [ \"\$cls\" = '0' ]; then curl -o \${TAR} https://${DOWNLOAD_HOST}/bench-disto/\${TAR}; elif [ \"\$wgs\" = '0' ]; then wget -q -O \${TAR} https://${DOWNLOAD_HOST}/bench-disto/\${TAR}; else echo 'neither curl or wget are installed. giving up.'; exit 1; fi; tar xzf \${TAR}; cd ${DISTO}; ./ub -i 1 $APP -I '$INSTANCE' $PROVIDER $LOCATION -O '$OBJECTIVE' $MRC $NRC $CREATE_TIME"
+# execute locally
+SSHOPTS="-o LogLevel=quiet -oStrictHostKeyChecking=no -oBatchMode=yes"
+if [ "$SSH_HOST" = "" ]; then
+    sh -c "$CMD"
+elif [ "$IDENT" != "" ]; then
+    ssh -i $IDENT $PORT $SSHOPTS $SSH_HOST $CMD 
+elif [ "$PASS" != "" ]; then
+    sshpass -p "$PASS" ssh $SSHOPTS $PORT $SSH_HOST $CMD 
+else
+    ssh $SSHOPTS $PORT $SSH_HOST $CMD 
+fi
+if [ $? != 0 ]; then
+    echo "RunRemote failed for: $@"
+fi
+exit 0

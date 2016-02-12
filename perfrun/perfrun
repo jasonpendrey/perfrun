@@ -1,0 +1,299 @@
+#!/usr/bin/env ruby
+
+require 'optparse'
+require './perfdriver'
+require './drivers/rackspace'
+
+class PerfRun
+  TESTTIME = 12*60*60
+  CONFIG = "config/perfrun.config"
+  CRED_CONFIG = "config/credentials.config"
+
+  @programname = $PROGRAM_NAME
+  @debug = false
+  @mode = 'run'
+  @verbose = 0
+  @daemon = false
+  @dryrun = false
+  @threads = []
+  @config = CONFIG
+  @PERIOD = 7         # period length in days
+  @NPERPERIOD = 2     # number of times to run in the period
+  @HOURSPERDAY = 24   # number of hours to use per day
+  @SLEEPTMO = 60*30   # wake timeout to check on progress
+  
+  def self.oneoffrun 
+    $perfrun_table.each do |obj|
+      next if obj['instances'].length == 0
+      if ARGV.length > 0
+        prov = obj['instances'][0]['provider']
+        next if ! ARGV.include? prov
+      end
+      runone obj
+    end
+    waitthreads
+  end
+  
+  def self.daemonrun 
+    killdaemon true
+    nextfill = Time.now
+    objs = $perfrun_table
+    begin
+    while true
+      puts "\033[1mchecking run at #{Time.now.to_s} (nextfill @#{nextfill.to_s})\033[m"
+      checkthreads
+      if nextfill <= Time.now
+        puts "refilling schedule..."
+        objs.each do |obj|
+          obj[:nextrun] = roll
+          puts "#{obj.inspect}" if @verbose > 0
+        end
+        nextfill = Time.now+(@PERIOD*24*60*60)
+      end
+      objs.each do |obj|
+        obj[:nextrun].sort! { |a, b| 
+          a[:run_at] - b[:run_at]
+        }
+      end      
+      objs.sort! { |a, b| 
+        a = a[:nextrun].length > 0 ? a[:nextrun][0][:run_at].to_i : Float::INFINITY
+        b = b[:nextrun].length > 0 ? b[:nextrun][0][:run_at].to_i : Float::INFINITY
+        a - b
+      }
+      now = Time.now
+      objs.each do |obj|
+        obj[:nextrun].each_with_index do |runtime, idx|
+          prov = obj['instances'][0]['provider']
+          loc = obj['instances'][0]['location']
+          if runtime[:run_at] > now
+            puts "#{prov}/#{loc} will run at #{runtime[:run_at]} (#{((runtime[:run_at]-now)/3600).round} hours from now)" if idx == 0
+            next
+          end
+          obj[:nextrun].delete_at idx          
+          runone obj
+        end
+      end
+      puts "---------------------"
+      STDOUT.flush
+      sleep @SLEEPTMO
+    end
+    rescue Exception => e
+      puts "\n\n***Perfrun: cleaning up because of #{e.inspect} ***"
+      @threads.each do |t|
+        t[:pd].abort if t[:pd] 
+      end
+      @threads.each do |t|
+        t[:pd].cleanup if t[:pd] 
+      end
+    end
+  end
+
+  def self.runone obj
+    prov = obj['instances'][0]['provider']
+    loc = obj['instances'][0]['location']
+    opts = {}
+    opts[:verbose] = @verbose
+    opts[:instances] = obj['instances']
+    opts[:mode] = @mode
+    opts[:app_host] = @app_host if @app_host
+    if @mode == 'run' or @mode == 'delete'
+      curthread = {started_at:Time.now, prov: prov, loc: loc}
+      curthread[:thread] = Thread.new {    
+        curthread[:thread] = Thread.current
+        puts "#{@mode.capitalize} #{prov}/#{loc} at #{Time.now}"
+        curthread[:pd] = pd = PerfDriver.new
+        pd.run opts
+        delthread curthread
+      }
+      @mutex.synchronize do 
+        @threads.push curthread unless curthread[:dead]
+      end
+    else
+      puts "#{@mode.capitalize} #{prov}/#{loc}"
+      pd = PerfDriver.new
+      pd.run opts
+    end
+  end
+
+
+  def self.main
+    @mutex = Mutex.new
+    if ARGV.length > 0
+      OptionParser.new do |o|
+        o.on('--app_host HOST') { |b|
+          @app_host = b
+        }
+        o.on('--delete') { |b|
+          @mode = 'delete'
+        }
+        o.on('--list') { |b|
+          @mode = 'list'
+        }
+        o.on('--verbose', '-v') { |b|
+          @verbose = 1
+        }
+        o.on('--daemon', '-d') { |b|
+          @daemon = true
+        }
+        o.on('--dryrun') { |b|
+          @dryrun = true
+        }
+        o.on('--config CONFIG') { |b|
+          @config = b
+        }
+        o.on('--knifelist') { |b|
+          @mode = 'knifelist'
+        }
+        o.on('--kill') { |b|
+          killdaemon false
+          exit
+        }
+        o.on('--debug') { |b|
+          @debug = true
+        }
+        # this is really a miserable hack, but c'est la vie
+        o.on('--delete-rackspace-disk DISKSPEC') { |b|
+          spec = b.split ':'
+          uuid = spec[0]
+          loc = spec [1]
+          RackspaceVolumes.delete_volume({'id' => uuid}, loc)
+          exit 0
+        }
+      end.parse!
+    end
+
+    start = Time.now
+    if @debug
+      @PERIOD = 1
+      @NPERPERIOD = 1
+      @HOURSPERDAY = 24
+      @SLEEPTMO = 60*5
+    end      
+    $LOAD_PATH.push "#{Dir.pwd}/config"
+    begin
+      load CRED_CONFIG
+    rescue
+    end
+    load @config
+    nstart = 0
+    if @daemon
+      daemonrun
+    else
+      oneoffrun
+    end
+#    Process.waitall
+    puts "\033[1mPerfrun finished after #{((Time.now-start)/60).round(1)} minutes\033[m"
+    begin
+      File.delete("#{Dir.pwd}/logs/#{@programname}.pid") if @daemon
+    rescue
+    end
+    exit 0
+  end
+
+  private
+
+  def self.roll
+    rv = []
+    n = @NPERPERIOD
+    while n > 0
+      day = rand 0..@PERIOD-1
+      hour = rand(0..@HOURSPERDAY-2)
+      time = Time.new
+      time += 24*60*60*day
+      time += 60*60*hour
+      found = false
+      rv.each do |r|
+        if time.to_i < r[:run_at].to_i+TESTTIME and time.to_i >= r[:run_at].to_i-TESTTIME
+          found = true
+          break
+        end
+      end
+      next if found
+      rv.push({run_at: time, day: day, hour: hour})
+      n-= 1
+    end
+    rv
+  end
+
+  def self.killdaemon recordnew
+    begin
+      fname = "#{Dir.pwd}/logs/#{@programname}.pid"
+      oldpid = nil
+      if File.exists? (fname)
+        pidfile = File.open(fname, 'r')  
+        oldpid = pidfile.read
+        pidfile.close
+      end
+      if recordnew
+        pidfile = File.open(fname, 'w')  
+        pidfile.write Process.pid.to_s
+        pidfile.close
+      end
+      begin
+        unless oldpid.nil?
+          puts "perfrun killing #{oldpid}" 
+          Process.kill("HUP", oldpid.to_i)
+        end
+      rescue
+        puts "can't kill #{oldpid}"
+      end
+    rescue Exception => e
+      puts "something went wrong with cleaning up old daemons: #{e.message}"
+    end    
+  end
+
+  def self.waitthreads
+    puts "\033[1mStart waiting for #{@threads.length} threads: #{@threads.inspect}\033[m" if @threads.length > 0
+    begin
+      while @threads.length > 0
+        @mutex.synchronize do 
+          puts "-----------" if @verbose > 0
+          @threads.each_with_index do |t, idx|
+            if ! t[:thread].status or t[:dead]
+              @threads.delete_at idx
+              next
+            end
+            puts "waiting for #{t[:prov]}/#{t[:loc]} to finish" if @verbose > 0
+          end
+        end
+        STDOUT.flush
+        sleep 10
+      end      
+    rescue Exception => e
+      puts "\n\n***Perfrun: cleaning up because of #{e.inspect} ***"
+      @threads.each do |t|
+        t[:pd].abort if t[:pd] 
+      end
+      @threads.each do |t|
+        t[:pd].cleanup if t[:pd] 
+      end
+    end
+  end
+
+  def self.checkthreads
+    @mutex.synchronize do 
+      @threads.each_with_index do |t, idx|
+        if ! t[:thread].status or t[:dead]
+          @threads.delete_at idx
+          next
+        end
+        puts "waiting for #{t[:prov]}/#{t[:loc]} to finish" if @verbose > 0
+      end
+    end
+    STDOUT.flush
+  end
+
+  def self.delthread thread
+    @mutex.synchronize do 
+      thread[:dead] = true
+      @threads.each_with_index do |t, idx|
+        next if t != thread
+        @threads.delete_at idx
+        break
+      end
+    end
+  end
+
+end
+
+PerfRun.main
