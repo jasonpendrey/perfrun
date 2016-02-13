@@ -34,7 +34,7 @@ class RackspaceDriver
 
   def self.delete_server s, id, location, diskuuid=nil
     config = location.upcase == 'LON' ? ' -c .chef/knife.rsuk.rb ' : '';
-    out = "yes|bundle exec knife #{CHEF_PROVIDER} server delete -N #{s}  #{id} --purge  --rackspace-region #{location} #{config}  2>&1"
+    out = "yes|bundle exec knife #{CHEF_PROVIDER} server delete -N #{s}  #{id} --purge  --rackspace-region #{location} #{config}"
     if diskuuid
       out += "; ./perfrun --delete-rackspace-disk #{diskuuid}:#{location}"
     end

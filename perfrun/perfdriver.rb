@@ -319,6 +319,19 @@ class PerfDriver
     return true
   end
 
+  def status
+    status = "   starting  "
+    @threads.each do |t|
+      status += "#{t[:inst]}/#{t[:loc]} "
+    end
+    status += "\n   running   "
+    @pids.each do |p|
+      status += "#{p[:inst]}/#{p[:inst]} "
+    end
+    status += "\n"
+    status
+  end
+
   def delthread thread
     @mutex.synchronize do 
       thread[:dead] = true

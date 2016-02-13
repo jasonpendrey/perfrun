@@ -49,6 +49,6 @@ class Ec2Driver
   end
 
   def self.delete_server s, id, location, diskuuid=nil
-    "yes|bundle exec knife #{CHEF_PROVIDER} server delete --region #{location} -N #{s} #{id} --purge  2>&1"
+    "yes|bundle exec knife #{CHEF_PROVIDER} server delete --region #{location} -N #{s} #{id} --purge"
   end
 end

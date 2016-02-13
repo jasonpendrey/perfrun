@@ -29,12 +29,13 @@ class GoogleDriver
   def self.create_server name, instance, location, login_as, ident
     roles = ""
     image = 'ubuntu-1410-utopic-v20150318c'
-    system "yes|bundle exec knife google disk delete #{name} -Z #{location} 2>/dev/null; sleep 30 || true"
+    rv = `yes|bundle exec knife google disk delete #{name} -Z #{location} 2>&1`
+    sleep 60 if ! rv.start_with? 'ERROR:'
     return `yes|bundle exec knife google server create #{name} -r "#{roles}" -N #{name} -I #{image} -m "#{instance}" -V -Z "#{location}" -x '#{login_as}' -i '#{ident}' 2>&1`
   end
 
   def self.delete_server s, id, location, diskuuid=nil
-    "yes|bundle exec knife #{CHEF_PROVIDER} server delete -N #{s}  #{id} -Z #{location} --purge; sleep 30; yes|bundle exec knife #{CHEF_PROVIDER} disk delete #{id} -Z #{location}"
+    "yes|bundle exec knife #{CHEF_PROVIDER} server delete -N #{s}  #{id} -Z #{location} --purge; sleep 60; yes|bundle exec knife #{CHEF_PROVIDER} disk delete #{id} -Z #{location}"
   end
 
 end

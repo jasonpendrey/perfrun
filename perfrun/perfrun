@@ -248,12 +248,16 @@ class PerfRun
       while @threads.length > 0
         @mutex.synchronize do 
           puts "-----------" if @verbose > 0
+          now = Time.now
           @threads.each_with_index do |t, idx|
             if ! t[:thread].status or t[:dead]
               @threads.delete_at idx
               next
             end
-            puts "waiting for #{t[:prov]}/#{t[:loc]} to finish" if @verbose > 0
+            if @verbose > 0
+              puts "waiting #{(now-t[:started_at]).round}s for #{t[:prov]}/#{t[:loc]} to finish" 
+              puts t[:pd].status if t[:pd]
+            end
           end
         end
         STDOUT.flush
@@ -261,6 +265,7 @@ class PerfRun
       end      
     rescue Exception => e
       puts "\n\n***Perfrun: cleaning up because of #{e.inspect} ***"
+      puts "#{e.backtrace.join "\n"}" if @verbose > 0
       @threads.each do |t|
         t[:pd].abort if t[:pd] 
       end
@@ -269,7 +274,7 @@ class PerfRun
       end
     end
   end
-
+  
   def self.checkthreads
     @mutex.synchronize do 
       @threads.each_with_index do |t, idx|
