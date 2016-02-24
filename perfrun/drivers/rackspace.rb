@@ -5,7 +5,7 @@ class RackspaceDriver
   PROVIDER = 'Rackspace'
   PROVIDER_ID = 39
   CHEF_PROVIDER = 'rackspace'
-  MAXJOBS = 2
+  MAXJOBS = 1
   LOGIN_AS='root'
   @locations_visited = []
 

@@ -1,7 +1,7 @@
 class SoftlayerDriver
   PROVIDER='Softlayer'
   CHEF_PROVIDER='softlayer'
-  MAXJOBS = 2
+  MAXJOBS = 1
   PROVIDER_ID = 574
   LOGIN_AS='root'
 

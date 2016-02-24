@@ -22,7 +22,7 @@ class PerfRun
   @HOURSPERDAY = 24   # number of hours to use per day
   @SLEEPTMO = 60*30   # wake timeout to check on progress
   
-  def self.oneoffrun 
+  def self.oneoffrun     
     $perfrun_table.each do |obj|
       next if obj['instances'].length == 0
       if ARGV.length > 0

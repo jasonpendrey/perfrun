@@ -1,7 +1,7 @@
 class AzureDriver
   PROVIDER = 'Microsoft Azure'
   CHEF_PROVIDER = 'azure'
-  MAXJOBS = 2
+  MAXJOBS = 1
   PROVIDER_ID = 92
   LOGIN_AS='ubuntu'
 

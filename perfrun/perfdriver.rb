@@ -9,6 +9,9 @@ class PerfDriver
 
   def initialize
     Dir["./drivers/*.rb"].each {|file| require file }
+    @threads = []
+    @pids = []
+    @verbose = 0
   end
 
   def run opts 
@@ -33,7 +36,6 @@ class PerfDriver
         puts e.backtrace.join "\n"
       end
     end
-    @verbose = 0 if ! @verbose
     @app_host = opts[:app_host] if opts[:app_host]
     @errorinsts = [] if @mode == 'run'
     @pids = []
@@ -68,7 +70,13 @@ class PerfDriver
           next
         end
         @login_as = inst['login_as'] if inst['login_as']
-        @ident = inst['ident'] if inst['ident']
+        if inst['keyfile']
+          if inst['keyfile'].include? '/' or inst['keyfile'].include? '..'
+            @ident = inst['keyfile']
+          else
+            @ident = "#{Dir.pwd}/config/#{inst['keyfile']}"
+          end
+        end
         fullname = fullinstname instname, instloc          
         if (! activeloc or activeloc != instloc or ! activeprovider or activeprovider != @curprovider)
           active = {}
@@ -326,7 +334,7 @@ class PerfDriver
     end
     status += "\n   running   "
     @pids.each do |p|
-      status += "#{p[:inst]}/#{p[:inst]} "
+      status += "#{p[:inst]}/#{p[:loc]} "
     end
     status += "\n"
     status
@@ -470,7 +478,6 @@ class PerfDriver
   end
 
   def maxjobs
-    return 1
     @driver::MAXJOBS
   end
 

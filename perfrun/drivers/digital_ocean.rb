@@ -2,7 +2,7 @@ class DigitalOceanDriver
 
   PROVIDER='Digital Ocean'
   CHEF_PROVIDER='digital_ocean'
-  MAXJOBS = 2
+  MAXJOBS = 1
   PROVIDER_ID = 110
   LOGIN_AS='root'
 
@@ -49,7 +49,10 @@ class DigitalOceanDriver
   end
 
   def self.get_image location
-    return @ubuntuimage if @ubuntuimage
+    if @ubuntuimage and @fetchtime+3600 > Time.now
+      return @ubuntuimage 
+    end
+    @fetchtime = Time.now
     `bundle exec knife #{CHEF_PROVIDER} image list -P`.split("\n").each do |line|
       next unless line.include? 'ubuntu-14-04-x64'
       return @ubuntuimage = line.split(" ")[0]      

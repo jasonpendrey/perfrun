@@ -3,7 +3,7 @@ class LinodeDriver
   PROVIDER='Linode'
   PROVIDER_ID = 90
   CHEF_PROVIDER='linode'
-  MAXJOBS = 2
+  MAXJOBS = 1
   LOGIN_AS='root'
 
   # @override

@@ -1,5 +1,7 @@
 class HostDriver
 
+  CHEF_PROVIDER = "host"
+  LOGIN_AS = "root"
   MAXJOBS = 6
 
   def initialize 
@@ -8,19 +10,24 @@ class HostDriver
 
 
   # @override
-  def get_active location, all, &block
-    $instances.each do |host|
-      name = host[:instname]+'/'+location      
-      if host[:fqdn].nil? or host[:fqdn].empty?
-        puts "skipping #{name} because no fqdn to login"
-        next
+  def self.get_active location, all, &block
+    $perfrun_table.each do |obj|
+      obj['instances'].each do |host|        
+        name = host['instname']+'/'+location      
+        next if host['provider'] != 'host'
+        next if host['fqdn'].nil? or host['fqdn'].empty?
+        yield host['instname'], name, host['fqdn'], 'active'
       end
-      yield host[:instname], name, host[:fqdn], 'active'
     end
   end
 
+  def self.create_server name, instance, location, login_as, ident
+    # nothing to do
+    return 'true'
+  end
+
   # @override
-  def delete_server name, id, location, diskuuid=nil
+  def self.delete_server name, id, location, diskuuid=nil
     # nothing to do
     return 'true'
   end

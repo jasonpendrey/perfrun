@@ -1,7 +1,7 @@
 class Ec2Driver
   PROVIDER='Amazon/AWS'
   CHEF_PROVIDER='ec2'
-  MAXJOBS = 2
+  MAXJOBS = 1
   PROVIDER_ID = 67
   LOGIN_AS='ubuntu'
 

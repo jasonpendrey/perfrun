@@ -1,7 +1,7 @@
 class GoogleDriver
   PROVIDER='Google Compute Engine'
   CHEF_PROVIDER='google'
-  MAXJOBS = 2
+  MAXJOBS = 1
   PROVIDER_ID = 920  
   LOGIN_AS='ubuntu'
 
