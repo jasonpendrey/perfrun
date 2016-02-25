@@ -26,16 +26,17 @@ is a 1 core, 1 GB ram, 5 GB storage Linux instance.  ![Alt text](/doc/images/per
 
 2. We then need to tell the Burstorm app about particulars about the server we want to test. With the objective
 we created in step (1), we can click the advanced button, which exposes the run spec field. Click on the
-Run Spec field and the Run Spec editor will appear:  
-Enter the dns name of the server, and the name of the SSH key file that will be used to log in to the server.  **NOTE**: Burstorm does NOT upload your server keys EVER. This is just a path to the server keys that will be
-added later. ![Alt text](/doc/images/perfrun.1.png?raw=true "edit run spec")  ![Alt text](/doc/images/perfrun.2.png?raw=true "edit run spec")
+Run Spec field and the Run Spec editor will appear: ![Alt text](/doc/images/perfrun.1.png?raw=true "click on run spec") 
 
-3. Once you've entered your Run Spec information, apply the change, and save the server in the app: ![Alt text](/doc/images/perfrun.3.png?raw=true "save objective")
+3. Enter the dns name of the server, and the name of the SSH key file that will be used to log in to the server.  **NOTE**: Burstorm does NOT upload your server keys EVER. This is just a path to the server keys that will be
+added later. ![Alt text](/doc/images/perfrun.2.png?raw=true "edit run spec")
+
+4. Once you've entered your Run Spec information, apply the change, and save the server in the app: ![Alt text](/doc/images/perfrun.3.png?raw=true "save objective")
 
 
-4. We're now ready to export the perfrun configuration file. Click on the Perfrun Script item in the Save-A pulldown, and the configuration will be downloaded to your computer. ![Alt text](/doc/images/perfrun.4.png?raw=true "save-as perfrun")
+5. We're now ready to export the perfrun configuration file. Click on the Perfrun Script item in the Save-A pulldown, and the configuration will be downloaded to your computer. ![Alt text](/doc/images/perfrun.4.png?raw=true "save-as perfrun")
 
-5. The last step is to generate a Burstorm API key and secret. This allows you to save perfruns to the Burstorm servers under your login name, and keeps them private. ![Alt text](/doc/images/perfrun.6.png?raw=true "create API keys")
+6. The last step is to generate a Burstorm API key and secret. This allows you to save perfruns to the Burstorm servers under your login name, and keeps them private. ![Alt text](/doc/images/perfrun.6.png?raw=true "create API keys")
 
 Ok, now we've done all of the configuration work we need to do with the Burstorm App. We have 3 more steps to go.
 
