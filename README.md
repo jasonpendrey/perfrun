@@ -1,5 +1,4 @@
-# perfrun
-This is the Burstorm public cloud server performance benchmarking suite.
+# The Burstorm Perfrun Server Benchmark Suite
 
 To get started, you must first clone this repo onto a Linux server or Desktop machine that you have
 login access to. The server should have about 4G of ram, have and have Ruby installed. Once you 
@@ -49,5 +48,8 @@ We're now ready to try a perfrun:
 1. ./perfrun --verbose
 2. in another window, you can view the log by running  $ tail -f logs/host.log
 
-Once it completes, you can go back into the Burstorm App to view the results:
+Once it completes, you can go back into the Burstorm App to view the results. In this case, we're looking at a Burstorm perfrun of some of our developer machines:
 
+ ![Alt text](/doc/images/perfrun.7.png?raw=true "view results")
+ 
+ With the app, you'll be able to view data sets from your perfruns, the standard Burstorm perfruns including AWS, Google Cloud, etc, and any other perfruns you have access to. Filter them by provider, cores, and lots of other ways.
