@@ -2,3 +2,5 @@
 *
 # Except this file
 !.gitignore
+!knife.example.rb
+!credentials.config.example

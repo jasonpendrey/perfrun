@@ -233,8 +233,6 @@ my $baseParams = {
     "stdout" => 1,                  # Non-0 to keep stdout.
     "stdin" => "",
     "logmsg" => "",
-    "provider" => "",
-    "location" => "",
     "objective" => "",
     "mrc" => "",
     "nrc" => "",
@@ -888,16 +886,8 @@ sub parseArgs {
             $params->{'user'} = shift(@words);
         } elsif ($word eq "-p") {
             $params->{'pass'} = shift(@words);
-        } elsif ($word eq "-P") {
-            $params->{'provider'} = shift(@words);
-        } elsif ($word eq "-L") {
-            $params->{'location'} = shift(@words);
         } elsif ($word eq "-O") {
             $params->{'objective'} = shift(@words);
-        } elsif ($word eq "-m") {
-            $params->{'mrc'} = shift(@words);
-        } elsif ($word eq "-n") {
-            $params->{'nrc'} = shift(@words);
         } elsif ($word eq "-I") {
             $params->{'instance_type'} = shift(@words);
         } elsif ($word eq "-h") {
@@ -1908,15 +1898,7 @@ sub displaySystemJSON {
     }
     printf $fd "\n";
     # provider and instance type info
-    printf $fd ' "provider":"%s", ', $params->{'provider'};
-    printf $fd "\n";
-    printf $fd ' "location":"%s", ', $params->{'location'};
-    printf $fd "\n";
     printf $fd ' "objective":"%s", ', $params->{'objective'};
-    printf $fd "\n";
-    printf $fd ' "mrc":"%s", ', $params->{'mrc'};
-    printf $fd "\n";
-    printf $fd ' "nrc":"%s", ', $params->{'nrc'};
     printf $fd "\n";
     printf $fd ' "instance_type":"%s", ', $params->{'instance_type'};
     printf $fd "\n";
