@@ -51,6 +51,14 @@ Once it completes, you can go back into the Burstorm App to view the results. In
  
 Within the Burstorm application, you'll be able to view the data sets from your private perfruns, the standard Burstorm perfruns (which include our continual test results of AWS, Google Cloud, Rackspace etc), and any other perfruns you have access to. Once you select the datasets you can than filter them by provider, cores, and lots of other ways.
 
+## Setting up Perfrun for Cloud Providers
+
+[ THIS IS ALL VERY TENTATIVE. /mat]
+
+ Burstorm already does perfruns on a weekly basis for many cloud providers, but if you'd like to spin up, benchmark and reap cloud instances for the drivers we support (aws, rackspace, linode, azure, softlayer, google and digital ocean), you can do that as well. First off, you must provide your credentials to access the cloud providers you want to benchmark. The file config/knife.examples.rb shows the place to put the information credentials that perfrun uses. Perfrun uses Chef/knife to actually manage the instance (create, list, delete) so you can google for knife PROVIDER to find out how to obtain your provider's API credentails (if you don't have them already), and what the format within knife.rb should be. Additionally, you will need credentials to login to the Opscode.com chef server (or your own chef server if that's what you want). This is also in knife.rb
+ 
+ Once you've set up knife.rb, you need to create a blueprint to model the cloud instances you'd like to benchmark. Instead of supplying the host's name in the Run Spec, choose "Run Spec is for a Cloud Provider". Now choose the provider and an instance you'd like to benchmark. Leave the OS image name alone (XXX, still needs to be rationalized /mat). Edit the server SSH key if applicable for the cloud provider (some providers return passwords, which perfrun captures), and the default login name (typically ubuntu for Ubuntu disto images). Click "apply", save the objective, save-as a "perfrun script" and copy the perfrun.config to your server with the perfrun repo as you did above. Run perfrun as usual, and it should fire up yours instances, run the benchmark, and reap them!
+
 ## What we Upload
 
 The Burstorm perfrun server uses a slightly modified version of the venerable UnixBench. The modifications are mainly to add a JSON formatted output (in addition to UnixBench's HTML and plain text output), and to upload the JSON blob to the Burstorm servers. In the JSON blob the app takes a single new field, an objective id, which tells the Burstorm app which contract the perfrun being uploaded is associated with.
