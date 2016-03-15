@@ -151,6 +151,12 @@ class PerfRun
         o.on('--debug') { |b|
           @debug = true
         }
+        o.on('--nperperiod N') { |b|
+          @nperperiod = Integer b
+        }
+        o.on('--period N') { |b|
+          @period = Integer b
+        }
         # this is really a miserable hack, but c'est la vie
         o.on('--delete-rackspace-disk DISKSPEC') { |b|
           spec = b.split ':'

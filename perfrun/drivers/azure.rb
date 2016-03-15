@@ -34,11 +34,12 @@ class AzureDriver
     # 14.04
     image = 'b39f27a8b8c64d52b05eac6a62ebad85__Ubuntu-14_04_2_LTS-amd64-server-20150309-en-us-30GB'
     dns = name.gsub('_', '-')
-    return `yes|bundle exec knife azure server create -r "#{roles}" --azure-vm-name #{name} --azure-dns-name "perfrun-#{dns}" -N #{name} -I #{image} --azure-vm-size "#{instance}" -V -m "#{location}" --ssh-user '#{login_as}' --ssh-port 22 --identity-file #{ident} 2>&1`
+    return `yes|bundle exec knife azure server create -r "#{roles}" --azure-vm-name #{name} --azure-dns-name "perfrun-#{dns}" -N #{dns} -I #{image} --azure-vm-size "#{instance}" -V -m "#{location}" --ssh-user '#{login_as}' --ssh-port 22 --identity-file #{ident} 2>&1`
   end
 
-  def self.delete_server s, id, location, diskuuid=nil
-    "yes|bundle exec knife #{CHEF_PROVIDER} server delete -N #{s}  #{id} --purge"
+  def self.delete_server name, id, location, diskuuid=nil
+    dns = name.gsub('_', '-')
+    "yes|bundle exec knife #{CHEF_PROVIDER} server delete -N #{dns}  #{id} --purge"
   end
 
 end
