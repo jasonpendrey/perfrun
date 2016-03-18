@@ -17,10 +17,10 @@ class PerfRun
   @dryrun = false
   @threads = []
   @config = CONFIG
-  @PERIOD = 7         # period length in days
-  @NPERPERIOD = 2     # number of times to run in the period
-  @HOURSPERDAY = 24   # number of hours to use per day
-  @SLEEPTMO = 60*30   # wake timeout to check on progress
+  @period = 7         # period length in days
+  @nperperiod = 1     # number of times to run in the period
+  @hoursperday = 24   # number of hours to use per day
+  @sleeptmo = 60*30   # wake timeout to check on progress
   
   def self.oneoffrun     
     $perfrun_table.each do |obj|
@@ -48,7 +48,7 @@ class PerfRun
             obj[:nextrun] = roll
             puts "#{obj.inspect}" if @verbose > 0
           end
-          nextfill = Time.now+(@PERIOD*24*60*60)
+          nextfill = Time.now+(@period*24*60*60)
         end
         objs.each do |obj|
           obj[:nextrun].sort! { |a, b| 
@@ -75,7 +75,7 @@ class PerfRun
         end
         puts "---------------------"
         STDOUT.flush
-        sleep @SLEEPTMO
+        sleep @sleeptmo
       end
     rescue Exception => e
       puts "\n\n***Perfrun: cleaning up because of #{e.inspect} ***"
@@ -175,10 +175,10 @@ class PerfRun
 
     start = Time.now
     if @debug
-      @PERIOD = 1
-      @NPERPERIOD = 1
-      @HOURSPERDAY = 24
-      @SLEEPTMO = 60*5
+      @period = 1
+      @nperperiod = 1
+      @hoursperday = 24
+      @sleeptmo = 60*5
     end      
     $LOAD_PATH.push "#{Dir.pwd}/config"
     begin
@@ -200,10 +200,10 @@ class PerfRun
 
   def self.roll
     rv = []
-    n = @NPERPERIOD
+    n = @nperperiod
     while n > 0
-      day = rand 0..@PERIOD-1
-      hour = rand(0..@HOURSPERDAY-1)
+      day = rand 0..@period-1
+      hour = rand(0..@hoursperday-1)
       time = Time.new
       time += 24*60*60*day
       time += 60*60*hour
