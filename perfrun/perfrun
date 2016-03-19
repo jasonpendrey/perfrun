@@ -46,7 +46,7 @@ class PerfRun
           puts "refilling schedule..."
           objs.each do |obj|
             obj[:nextrun] = roll
-            puts "#{obj.inspect}" if @verbose > 0
+            #puts "#{obj.inspect}" if @verbose > 0
           end
           nextfill = Time.now+(@period*24*60*60)
         end
@@ -60,13 +60,14 @@ class PerfRun
           b = b[:nextrun].length > 0 ? b[:nextrun][0][:run_at].to_i : Float::INFINITY
           a - b
         }
+        watchdog
         now = Time.now
         objs.each do |obj|
           obj[:nextrun].each_with_index do |runtime, idx|
             prov = obj['instances'][0]['provider']
             loc = obj['instances'][0]['location']
             if runtime[:run_at] > now
-              puts "#{prov}/#{loc} will run at #{runtime[:run_at]} (#{((runtime[:run_at]-now)/3600).round} hours from now)" #if idx == 0
+              puts "#{prov}/#{loc} will run at #{runtime[:run_at]} (#{((runtime[:run_at]-now)/3600).round} hours from now)" if idx == 0
               next
             end
             obj[:nextrun].delete_at idx          
@@ -304,6 +305,39 @@ class PerfRun
       end
     end
   end
+
+  def self.watchdog
+    return if @watchdog
+    @watchdog = Thread.new {
+      while true        
+        begin
+          # kill off instances that were left orphaned
+          if @threads.length == 0
+            now = Time.now
+            found = false
+            # but don't kill them if it's about to run
+            $perfrun_table.each do |obj|
+              next if obj[:nextrun].length == 0
+              if obj[:nextrun][0][:run_at] < now+5*60
+                found = true
+                break
+              end
+            end
+            next if found
+            puts "\033[1mrunning kill van...\033[m"
+            out = `./perfrun --delete`
+            puts out if @verbose > 0
+            puts "\033[1mkill van done.\033[m"
+          end
+        rescue Exception => e
+          puts "WATCHDOG Exception: #{e.message}"
+          puts "#{e.backtrace.join "\n"}"
+        end
+        sleep 10*60
+      end
+    }
+  end
+
 
 end
 
