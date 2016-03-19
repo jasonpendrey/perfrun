@@ -106,7 +106,7 @@ class PerfRun
       curthread = {started_at:Time.now, prov: prov, loc: loc}
       curthread[:thread] = Thread.new {    
         curthread[:thread] = Thread.current
-        puts "#{@mode.capitalize} #{prov}/#{loc} at #{Time.now}"
+        puts "#{@mode.capitalize} from #{prov}/#{loc} at #{Time.now}"
         curthread[:pd] = pd = PerfDriver.new
         pd.run opts
         delthread curthread
@@ -250,7 +250,7 @@ class PerfRun
   end
 
   def self.waitthreads
-    puts "\033[1mStart waiting for #{@threads.length} threads: #{@threads.inspect}\033[m" if @threads.length > 0
+    puts "\033[1mStart waiting for #{@threads.length} threads: #{@threads.inspect}\033[m" if @threads.length > 0 and @verbose > 0
     begin
       while @threads.length > 0
         @mutex.synchronize do 
