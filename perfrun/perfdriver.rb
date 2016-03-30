@@ -1,5 +1,4 @@
 require 'optparse'
-require './dblog'
 require 'active_support/all'  # for camelize
 
 class PerfDriver
@@ -19,7 +18,10 @@ class PerfDriver
     @app_host = $apphost || APP_HOST
     @opts = opts
     @aborted = false
-    DbLog.initdb if @withdb
+    if @withdb
+      require './dblog'
+      DbLog.initdb 
+    end
     instances = opts[:instances]
     @mode = opts[:mode]    
     @curprovider = instances[0]['provider']

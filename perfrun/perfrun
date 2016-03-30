@@ -262,7 +262,7 @@ class PerfRun
               next
             end
             if @verbose > 0
-              puts "waiting #{(now-t[:started_at]).round}s for #{t[:prov]}/#{t[:loc]} to finish (running #{(Time.now-t[:started_at])/60} minutes)" 
+              puts "waiting #{(now-t[:started_at]).round}s for #{t[:prov]}/#{t[:loc]} to finish (running #{((Time.now-t[:started_at])/60).to_i} minutes)" 
               puts t[:pd].status if t[:pd]
             end
           end
@@ -289,7 +289,7 @@ class PerfRun
           @threads.delete_at idx
           next
         end
-        puts "waiting for #{t[:prov]}/#{t[:loc]} to finish (running #{(Time.now-t[:started_at])/60} minutes)" if @verbose > 0
+        puts "waiting for #{t[:prov]}/#{t[:loc]} to finish (running #{((Time.now-t[:started_at])/60).to_i} minutes)" if @verbose > 0
       end
     end
     STDOUT.flush
