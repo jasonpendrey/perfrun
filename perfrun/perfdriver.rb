@@ -18,10 +18,6 @@ class PerfDriver
     @app_host = $apphost || APP_HOST
     @opts = opts
     @aborted = false
-    if @withdb
-      require './dblog'
-      DbLog.initdb 
-    end
     instances = opts[:instances]
     @mode = opts[:mode]    
     @curprovider = instances[0]['provider']
@@ -30,13 +26,6 @@ class PerfDriver
     @login_as = login_as
     if @mode == 'run'
       @started_at = Time.now
-      begin
-        DbLog.run_started
-        DbLog.run_status @provider, "runstart", "Starting run for #{instances}" 
-      rescue Exception => e
-        puts "dblog error: #{e.message}"
-        puts e.backtrace.join "\n"
-      end
     end
     @app_host = opts[:app_host] if opts[:app_host]
     @errorinsts = [] if @mode == 'run'
@@ -150,10 +139,8 @@ class PerfDriver
         if @errorinsts.length > 0
           @errorinsts.uniq!
           log "instances that didn't complete: #{@errorinsts.join(',')}"
-          DbLog.run_status @provider, "errinst", "#{@errorinsts.join(',')}" 
         end
         log "\033[1mRun aborted for #{instances}\033[m" 
-        DbLog.run_status @provider, "runabort", "Run aborted for #{instances}" 
       else
         killall
       end
@@ -165,10 +152,8 @@ class PerfDriver
       if @errorinsts.length > 0
         @errorinsts.uniq!
         log "instances that didn't complete: #{@errorinsts.join(',')}"
-        DbLog.run_status @provider, "errinst", "#{@errorinsts.join(',')}" 
       end
       log "\033[1mPerfrun #{@curprovider}/#{@curlocation} done at #{Time.now}; #{((Time.now-@started_at)/60).round} minutes\033[0m"
-      DbLog.run_status @provider, "rundone", "Run done for #{instances}" 
     end
   end
 
@@ -204,7 +189,6 @@ class PerfDriver
           rescue Errno::ECHILD
             log "deleting #{pid.inspect}" if @verbose > 0
             @pids.delete_at idx
-            DbLog.inst_status "server_done", "#{pid[:inst]}-#{pid[:loc]}", pid[:inst], nil
             next
           end
           if pid[:timedout]
@@ -222,7 +206,6 @@ class PerfDriver
   def start_server fullname, instname, flavor, instloc, scope_id
     log "creating #{fullname}/#{instname}..."
     crestart = Time.now
-    DbLog.inst_status "server_start", "starting #{fullname}", instname, crestart
     out = nil
     curthread = {started_at:Time.now, fullname: fullname, inst: instname, loc: instloc}
     curthread[:thread] = Thread.new {
@@ -236,7 +219,6 @@ class PerfDriver
           log "#{fullname} didn't start"
           @errorinsts.push "#(fullname} didn't start"
           delthread curthread        
-          DbLog.inst_status "server_error", "#{fullname} didn't start", instname, crestart
           return false
         end
         cretime = Time.now-crestart
@@ -268,7 +250,6 @@ class PerfDriver
           log "#{fullname}: create output: #{out}"
           @errorinsts.push "#{fullname} (create returned error)"
           delthread curthread
-          DbLog.inst_status "server_error", "#{fullname} error: #{error}", instname, crestart
           return false
         end
         log "#{fullname}: password=#{pass.inspect}, createip: #{create_ip.inspect}, diskuuid: #{diskuuid.inspect}" if @verbose > 0
@@ -289,7 +270,6 @@ class PerfDriver
           log "#{fullname}: active: #{actives.inspect}"
           @errorinsts.push fullname
           delthread curthread
-          DbLog.inst_status "server_error", "#{fullname} error: #{out}", instname, crestart
           return false
         end
         log "Running created #{fullname} ip=#{ip} id=#{id}"
@@ -306,7 +286,6 @@ class PerfDriver
             log "can't insert public key into #{fullname}"
             @errorinsts.push "#(fullname} (can't insert public key)"
             delthread curthread
-            DbLog.inst_status "server_error", "#{fullname} error: can't insert public key", instname, crestart
             return false
           end
         end
@@ -316,7 +295,6 @@ class PerfDriver
           @pids.push({pid: spawn(cmd), inst: instname, loc: instloc, started_at: Time.now})
         end
         delthread curthread
-        DbLog.inst_status "server_started", "#{fullname} started", instname, crestart
       rescue => e
         log "caught error starting server #{fullname}: #{e.message}" 
         log e.backtrace.join "\n"
@@ -375,7 +353,6 @@ class PerfDriver
                 @errorinsts.push "#{cur[:inst]}-#{cur[:loc]} (create timed out)"
                 @threads.delete_at idx
                 cur[:dead] = true
-                DbLog.inst_status "server_killed", "#{cur[:inst]}-#{cur[:loc]} start thread killed by watchdog", cur[:inst], nil
               end
             end
             @pids.each_with_index do |pid, idx|
@@ -394,7 +371,6 @@ class PerfDriver
                   log "WATCHDOG-#{Process.pid}: killing #{pid[:inst]}-#{pid[:loc]}/#{pid[:pid]} because #{((now-pid[:started_at])/60).round} minutes have elapsed"
                   @errorinsts.push "#{pid[:inst]}-#{cur[:loc]} (timed out)"
                   @pids.delete_at idx
-                  DbLog.inst_status "server_killed", "#{cur[:inst]}-#{cur[:loc]} run process killed by watchdog", cur[:inst], nil
                   pid[:timedout] = true
                 rescue 
                 end
@@ -427,7 +403,6 @@ class PerfDriver
       begin
         t[:thread].kill
         log "#{@curprovider}/#{@curlocation} killing thread #{t[:thread]}" if @verbose > 0
-        DbLog.inst_status "server_abort", "#t[:inst]}-#{t[:loc]} start thread killed by abort", t[:inst], nil
       rescue Exception => e
         log "thread error: #{e.message}"
         end
@@ -437,7 +412,6 @@ class PerfDriver
       begin
         Process.kill "HUP", pid[:pid]
         log "#{@curprovider}/#{@curlocation} killing pid #{pid[:pid]}" if @verbose > 0
-        DbLog.inst_status "server_abort", "#{pid[:inst]}-#{pid[:loc]} run process killed by abort", pid[:inst], nil
       rescue
       end
     end
