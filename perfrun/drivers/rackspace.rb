@@ -6,17 +6,13 @@ class RackspaceDriver
   PROVIDER_ID = 39
   CHEF_PROVIDER = 'rackspace'
   MAXJOBS = 1
-  LOGIN_AS='root'
-  @locations_visited = []
+  LOGIN_AS = 'root'
 
-  # @override
-  def self.fullinstname instname, instloc
-    instname+'-'+instloc.gsub(' ', '-')
-  end
+  @locations_visited = []
 
   def self.get_active location, all, &block  
     config = location.upcase == 'LON' ? ' -c .chef/knife.rsuk.rb ' : '';
-    servers = `bundle exec knife rackspace server list --rackspace-region "#{location}" #{config}`
+    servers = `bundle exec knife #{CHEF_PROVIDER} server list --rackspace-region "#{location}" #{config}`
     srv = servers.split "\n"
     srv.shift
     srv.each do |s|
@@ -41,8 +37,8 @@ class RackspaceDriver
     out
   end
 
-  def self.create_server name, instance, location, login_as, ident
-    roles = ""
+  def self.create_server name, flavor, location, provtags
+    roles = provtags.join ','
     @locations_visited.push location
     if location.upcase == "LON"
       config = ' -c .chef/knife.rsuk.rb '
@@ -50,16 +46,16 @@ class RackspaceDriver
       config = ''
     end
     # 14.04 PVHVM
-    image = '28153eac-1bae-4039-8d9f-f8b513241efe'
+    image = flavor['imageid'] || '28153eac-1bae-4039-8d9f-f8b513241efe'
     out = ''
-    instance = instance.to_s
+    instance = flavor['flavor'].to_s
     if ! instance.start_with? "compute1-" and ! instance.start_with? "memory1-"
-      out += `yes|bundle exec knife rackspace server create -r "#{roles}" --server-name #{name} -N #{name} --image #{image} --flavor #{instance} -V --rackspace-region "#{location}" #{config}  2>&1`
+      out += `yes|bundle exec knife #{CHEF_PROVIDER} server create -r "#{roles}" --server-name '#{name}' -N '#{name}' --image '#{image}' --flavor '#{instance}' -V --rackspace-region "#{location}" #{config} #{flavor['additional']} 2>&1`
     else
       uuid = RackspaceVolumes.create_volume name, image, location
       out += uuid + "\n"
       out += "DISKUUID: #{uuid}\n"
-      out += `yes|bundle exec knife rackspace server create -r "#{roles}" --server-name #{name} -N #{name} -B "#{uuid}" --flavor #{instance} -V --rackspace-region "#{location}" #{config} 2>&1`
+      out += `yes|bundle exec knife #{CHEF_PROVIDER} server create -r "#{roles}" --server-name '#{name}' -N '#{name}' -B "#{uuid}" --flavor '#{instance}' -V --ssh-user '#{flavor['login_as']}' --rackspace-region "#{location}" #{config} #{flavor['additional']} 2>&1`
     end
     out
   end

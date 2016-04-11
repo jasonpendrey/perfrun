@@ -3,12 +3,7 @@ class GoogleDriver
   CHEF_PROVIDER='google'
   MAXJOBS = 1
   PROVIDER_ID = 920  
-  LOGIN_AS='ubuntu'
-
-  # @override
-  def self.fullinstname instname, instloc
-    instname+'-'+instloc.gsub(' ', '-')
-  end  
+  LOGIN_AS = 'ubuntu'
 
   def self.get_active location, all, &block
     servers = `bundle exec knife #{CHEF_PROVIDER} server list -Z #{location}`
@@ -26,12 +21,12 @@ class GoogleDriver
     end
   end	     
 
-  def self.create_server name, instance, location, login_as, ident
-    roles = ""
-    image = 'ubuntu-1410-utopic-v20150318c'
-    rv = `yes|bundle exec knife google disk delete #{name} -Z #{location} 2>&1`
+  def self.create_server name, flavor, location, provtags
+    roles = provtags.join ','
+    image = flavor['imageid'] || 'ubuntu-1410-utopic-v20150318c'
+    rv = `yes|bundle exec knife #{CHEF_PROVIDER} disk delete #{name} -Z #{location} 2>&1`
     sleep 60 if ! rv.start_with? 'ERROR:'
-    return `yes|bundle exec knife google server create #{name} -r "#{roles}" -N #{name} -I #{image} -m "#{instance}" -V -Z "#{location}" -x '#{login_as}' -i '#{ident}' 2>&1`
+    return `yes|bundle exec knife #{CHEF_PROVIDER} server create '#{name}' -r "#{roles}" -N '#{name}' -I '#{image}' -m "#{flavor['flavor']}" -V -Z "#{location}" -x '#{flavor['login_as']}' -i '#{flavor['keyfile']}' #{flavor['additional']} 2>&1`
   end
 
   def self.delete_server s, id, location, diskuuid=nil

@@ -4,12 +4,7 @@ class LinodeDriver
   PROVIDER_ID = 90
   CHEF_PROVIDER='linode'
   MAXJOBS = 1
-  LOGIN_AS='root'
-
-  # @override
-  def self.fullinstname instname, instloc
-    instname+'-'+instloc.gsub(' ', '-')
-  end
+  LOGIN_AS = 'root'
 
   def self.get_active location, all, &block
     servers = `bundle exec knife #{CHEF_PROVIDER} server list`
@@ -32,11 +27,11 @@ class LinodeDriver
     end
   end	     
 
-  def self.create_server name, instance, location, login_as, ident
-    roles = ""
-    # the image corresponds to ubuntu 14.04, flavor is 2G
-    image = 124
-    return `yes|bundle exec knife linode server create -r "#{roles}" -L #{name} -N #{name} -I #{image} -f #{instance} --distro chef-full -x #{login_as} -D "#{location}" 2>&1`
+  def self.create_server name, flavor, location, provtags
+    roles = provtags.join ','
+    # the image corresponds to ubuntu 14.04
+    image = flavor['imageid'] || '124'
+    return `yes|bundle exec knife #{CHEF_PROVIDER} server create -r "#{roles}" -L '#{name}' -N '#{name}' -I '#{image}' -f '#{flavor['flavor']}' --distro chef-full -x '#{flavor['login_as']}' -D "#{location}" #{flavor['additional']} 2>&1`
   end
 
   def self.delete_server s, id, location, diskuuid=nil

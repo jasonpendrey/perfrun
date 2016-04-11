@@ -14,16 +14,15 @@ class PerfDriver
   end
 
   def run opts 
-    @ident = "#{Dir.pwd}/config/servers.pem"
     @app_host = $apphost || APP_HOST
     @opts = opts
     @aborted = false
-    instances = opts[:instances]
+    object = opts[:object]
+    @tags = opts[:tags]
     @mode = opts[:mode]    
-    @curprovider = instances[0]['provider']
-    @curlocation = instances[0]['location']
-    @driver = (@curprovider.camelize+'Driver').constantize
-    @login_as = login_as
+    @curprovider = object['provider']['name']
+    @curlocation = object['provider']['location_flavor']
+    @driver = (object['provider']['cloud_driver'].camelize+'Driver').constantize
     if @mode == 'run'
       @started_at = Time.now
     end
@@ -40,44 +39,37 @@ class PerfDriver
       activeprovider = nil      
       active = {}
       alines = []
-      instances.each do |inst|
+      object['compute_scopes'].each do |scope|
         break if @aborted
+        flavor = scope['flavor']
+        next if flavor.nil?
         @maxjobs = maxjobs
-        @curprovider = inst['provider']
-        instloc = inst['location']
-        instname = inst['instname']
-        flavor = inst['flavor'] || inst['instname']
-        scope_id = inst['objective']
-        if instloc.nil?
-          log "ignoring null location for #{@curprovider}"
-          next
-        end
-        if scope_id.nil?
+        if scope['id'].nil?
           log "ignoring null objective for #{@curprovider}"
           next
         end
-        if instname.nil?
-          log "ignoring null instname for #{@curprovider}"
+        if scope['details'].nil?
+          log "ignoring null scope name for #{@curprovider}"
           next
         end
-        @login_as = inst['login_as'] if inst['login_as']
-        if inst['keyfile']
-          if inst['keyfile'].include? '/' or inst['keyfile'].include? '..'
-            @ident = inst['keyfile']
-          else
-            @ident = "#{Dir.pwd}/config/#{inst['keyfile']}"
+        flavor['login_as'] = login_as if flavor['login_as'].nil?        
+        if flavor['keyfile']
+          if ! flavor['keyfile'].include?('/') and ! flavor['keyfile'].include?('..')
+            flavor['keyfile'] = "#{Dir.pwd}/config/#{flavor['keyfile']}"
           end
+        else
+          flavor['keyfile'] = "#{Dir.pwd}/config/servers.pem"
         end
-        fullname = fullinstname instname, instloc          
-        if (! activeloc or activeloc != instloc or ! activeprovider or activeprovider != @curprovider)
+        fullname = fullinstname scope['details'], @curlocation
+        if (! activeloc or activeloc != @curlocation or ! activeprovider or activeprovider != @curprovider)
           active = {}
           alines = []
-          get_active instloc, @mode != 'run' do |id, name, ip, state|
+          get_active @curlocation, @mode != 'run' do |id, name, ip, state|
             active[name] = name
             alines.push({id:id, name:name, ip:ip, state: state})
           end
           active = active.values          
-          activeloc = instloc
+          activeloc = @curlocation
           activeprovider = @curprovider
         end
         aline = nil
@@ -87,15 +79,15 @@ class PerfDriver
           break
         end
         if @mode == 'run'
-          @pubkey = `ssh-keygen -y -f #{@ident}`
-          raise "can't access #{@ident}" if @pubkey.nil? or @pubkey.empty?
+          @pubkey = `ssh-keygen -y -f #{flavor['keyfile']}`
+          raise "can't access #{flavor['keyfile']}" if @pubkey.nil? or @pubkey.empty?
           if ! active.include? fullname or ! aline or ! aline[:ip]
-            next unless start_server fullname, instname, flavor, instloc, scope_id
+            next unless start_server fullname, scope, @curlocation
           else
             ssh_remove_ip aline[:ip]
-            cmd = "(echo 'logging into #{fullname}...' && ./RunRemote  -O '#{scope_id}' -I '#{instname}' -i '#{@ident}' -H '#{@app_host}' -K #{APP_KEY} -S #{APP_SECRET} #{@login_as}@#{aline[:ip]}) >> #{logfile} 2>&1"
-            @mutex.synchronize do 
-              @pids.push({pid: spawn(cmd), inst: instname, loc: instloc, started_at: Time.now})
+            cmd = "(echo 'logging into #{fullname}...' && ./RunRemote  -O '#{scope['id']}' -I '#{scope['details']}' -i '#{flavor['keyfile']}' -H '#{@app_host}' -K #{APP_KEY} -S #{APP_SECRET} #{flavor['login_as']}@#{aline[:ip]}) >> #{logfile} 2>&1"
+            @mutex.synchronize do
+              @pids.push({pid: spawn(cmd), fullname: fullname,  inst: scope['details'], loc: @curlocation, started_at: Time.now})
             end
           end
           if @threads.length >= @maxjobs
@@ -108,16 +100,16 @@ class PerfDriver
           alines.each do |aline|
             if aline[:name] == fullname
               if @mode == 'delete'
-                cmd = delete_server(fullname, aline[:id], instloc)
+                cmd = delete_server(fullname, aline[:id], @curlocation)
                 @mutex.synchronize do 
-                  @pids.push({pid: spawn(cmd+'||true'), inst: fullname, loc: instloc, started_at: Time.now})
+                  @pids.push({pid: spawn(cmd+'||true'), fullname: fullname, inst: fullname, loc: @curlocation, started_at: Time.now})
                 end
               elsif @mode == 'list'
-                puts sprintf("#{instloc}\t%-20s\t#{aline[:id]}\t#{aline[:state]}", fullname)
+                puts sprintf("#{@curlocation}\t%-20s\t#{aline[:id]}\t#{aline[:state]}", fullname)
               end
             end
             if @mode == 'knifelist'
-              puts sprintf("#{instloc}\t%-20s\t#{aline[:id]}\t#{aline[:state]}", aline[:name])
+              puts sprintf("#{@curlocation}\t%-20s\t#{aline[:id]}\t#{aline[:state]}", aline[:name])
             end
           end
           return if @mode == 'knifelist'
@@ -140,7 +132,7 @@ class PerfDriver
           @errorinsts.uniq!
           log "instances that didn't complete: #{@errorinsts.join(',')}"
         end
-        log "\033[1mRun aborted for #{instances}\033[m" 
+        log "\033[1mRun aborted for #{objects}\033[m" 
       else
         killall
       end
@@ -155,6 +147,21 @@ class PerfDriver
       end
       log "\033[1mPerfrun #{@curprovider}/#{@curlocation} done at #{Time.now}; #{((Time.now-@started_at)/60).round} minutes\033[0m"
     end
+  end
+
+  def provisioning_tags scope
+    tags = []
+    return tags unless scope['tags']
+    return tags unless @tags
+    scope['tags'].each do |tag|
+      @tags.each do |ptag|
+        if ptag['name'] == tag['name'] and ptag['tag_type'] == 'provisioning'
+          tags.push tag['name']
+          break
+        end
+      end
+    end
+    tags
   end
 
   def verbose n
@@ -203,18 +210,21 @@ class PerfDriver
     @jobwait = 0
   end
 
-  def start_server fullname, instname, flavor, instloc, scope_id
-    log "creating #{fullname}/#{instname}..."
+  def start_server fullname, scope, locflavor
+    scopename = scope['details']
+    flavor = scope['flavor']
+    scope_id = scope['id']
+    log "creating #{fullname}..."
     crestart = Time.now
     out = nil
-    curthread = {started_at:Time.now, fullname: fullname, inst: instname, loc: instloc}
+    curthread = {started_at:Time.now, fullname: fullname, inst: scopename, loc: locflavor}
     curthread[:thread] = Thread.new {
       begin
         curthread[:thread] = Thread.current
         log "#{fullname}: waiting #{@jobwait*1}" if @jobwait > 0
         sleep @jobwait * 1
         @jobwait += 1
-        out = create_server(fullname, flavor, instloc, @login_as, @ident)
+        out = create_server(fullname, flavor, locflavor, provisioning_tags(scope))
         if out.nil?
           log "#{fullname} didn't start"
           @errorinsts.push "#(fullname} didn't start"
@@ -255,7 +265,7 @@ class PerfDriver
         log "#{fullname}: password=#{pass.inspect}, createip: #{create_ip.inspect}, diskuuid: #{diskuuid.inspect}" if @verbose > 0
         found = false
         id = ip = nil
-        actives = get_active instloc, false do |mid, mname, mip, mstate|      
+        actives = get_active locflavor, false do |mid, mname, mip, mstate|      
           if mname == fullname
             id = mid
             ip = mip
@@ -277,7 +287,7 @@ class PerfDriver
         if pass
           ntry = 0
           while ntry < 5
-            break if system ("sshpass -p #{pass} ssh #{SSHOPTS} #{@login_as}@#{ip} 'mkdir -p .ssh; chmod 0700 .ssh; echo \"#{@pubkey}\" >> .ssh/authorized_keys'")
+            break if system ("sshpass -p #{pass} ssh #{SSHOPTS} #{flavor['login_as']}@#{ip} 'mkdir -p .ssh; chmod 0700 .ssh; echo \"#{@pubkey}\" >> .ssh/authorized_keys'")
             log "retry #{ntry} insert pubkey to authkeys..."
             ntry += 1
             sleep 5
@@ -289,10 +299,10 @@ class PerfDriver
             return false
           end
         end
-        cmd = "(./RunRemote -I '#{instname}' -O '#{scope_id}' -i '#{@ident}' -H '#{@app_host}' -K #{APP_KEY} -S #{APP_SECRET} --create-time #{cretime} #{@login_as}@#{ip} && " +(delete_server(fullname, id, instloc, diskuuid))+ ")  >> #{logfile} 2>&1"
+        cmd = "(./RunRemote -I '#{scopename}' -O '#{scope_id}' -i '#{flavor['keyfile']}' -H '#{@app_host}' -K #{APP_KEY} -S #{APP_SECRET} --create-time #{cretime} #{flavor['login_as']}@#{ip} && " +(delete_server(fullname, id, locflavor, diskuuid))+ ")  >> #{logfile} 2>&1"
         log "cmd=#{cmd}" if @verbose > 0
         @mutex.synchronize do 
-          @pids.push({pid: spawn(cmd), inst: instname, loc: instloc, started_at: Time.now})
+          @pids.push({pid: spawn(cmd), fullname: fullname, inst: scopename, loc: locflavor, started_at: Time.now})
         end
         delthread curthread
       rescue => e
@@ -308,15 +318,22 @@ class PerfDriver
   end
 
   def status
-    status = "   starting  "
-    @threads.each do |t|
-      status += "#{t[:inst]}/#{t[:loc]} "
+    status = ""
+    if @threads.length > 0
+      status += "   starting  "
+      @threads.each do |t|
+        status += "#{t[:fullname]} "
+      end
+      status += "\n"
     end
-    status += "\n   running   "
-    @pids.each do |p|
-      status += "#{p[:inst]}/#{p[:loc]} "
+    if @pids.length > 0
+      status += "  running   "
+      @pids.each do |p|
+        status += "#{p[:fullname]} "
+      end
+      status += "\n"
     end
-    status += "\n"
+    status = "nothing running...\n" if status.empty?
     status
   end
 
@@ -345,12 +362,12 @@ class PerfDriver
             @threads.each_with_index do |cur, idx|
               next if cur[:dead]
               if (now - cur[:started_at] > WATCHDOGTMO)
-                log "WATCHDOG: killing #{cur[:inst]}-#{cur[:loc]} because create server didn't complete (#{(now-cur[:started_at]).round} seconds)"
+                log "WATCHDOG: killing #{cur[:fullname]} because create server didn't complete (#{(now-cur[:started_at]).round} seconds)"
                 begin
                   cur[:thread].kill if cur[:thread]
                 rescue
                 end
-                @errorinsts.push "#{cur[:inst]}-#{cur[:loc]} (create timed out)"
+                @errorinsts.push "#{cur[:fullname]} (create timed out)"
                 @threads.delete_at idx
                 cur[:dead] = true
               end
@@ -368,8 +385,8 @@ class PerfDriver
                   rescue Exeception => e
                     log "WATCHDOG error killing #{pid[:pid]} #{e.message}"
                   end
-                  log "WATCHDOG-#{Process.pid}: killing #{pid[:inst]}-#{pid[:loc]}/#{pid[:pid]} because #{((now-pid[:started_at])/60).round} minutes have elapsed"
-                  @errorinsts.push "#{pid[:inst]}-#{cur[:loc]} (timed out)"
+                  log "WATCHDOG-#{Process.pid}: killing #{pid[:fullname]}/#{pid[:pid]} because #{((now-pid[:started_at])/60).round} minutes have elapsed"
+                  @errorinsts.push "#{pid[:fullname]} (timed out)"
                   @pids.delete_at idx
                   pid[:timedout] = true
                 rescue 
@@ -432,8 +449,8 @@ class PerfDriver
 
   # driver related calls
 
-  def create_server name, instance, location, login_as, ident
-    @driver.create_server name, instance, location, login_as, ident
+  def create_server name, flavor, location, provtags
+    @driver.create_server name, flavor, location, provtags
   end
  
 
@@ -445,11 +462,12 @@ class PerfDriver
     @driver.get_active location, all, &block
   end
 
-  def fullinstname instname, instloc
+  def fullinstname scopename, locflavor
     if @driver.respond_to? :fullinstname
-      @driver.fullinstname instname, instloc
+      @driver.fullinstname scopename, locflavor
     else
-      instname+'/'+instloc
+      rv = scopename+'-'+locflavor
+      rv.gsub(/[ \/]/, '-')
     end
   end
 
@@ -462,7 +480,10 @@ class PerfDriver
   end
 
   def log msg
-    File.write logfile, msg+"\n", mode: 'a'
+    begin
+      File.write logfile, msg+"\n", mode: 'a'
+    rescue
+    end
     puts msg if @verbose  > 0
   end
 

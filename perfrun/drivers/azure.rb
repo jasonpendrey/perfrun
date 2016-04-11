@@ -3,13 +3,8 @@ class AzureDriver
   CHEF_PROVIDER = 'azure'
   MAXJOBS = 1
   PROVIDER_ID = 92
-  LOGIN_AS='ubuntu'
+  LOGIN_AS = 'ubuntu'
 
-  # @override
-  def self.fullinstname instname, instloc
-    instname+'-'+instloc.gsub(' ', '-')
-  end
-  
   def self.get_active location, all, &block
     servers = `bundle exec knife #{CHEF_PROVIDER} server list`
     srv = servers.split "\n"
@@ -29,12 +24,12 @@ class AzureDriver
     end
   end	     
 
-  def self.create_server name, instance, location, login_as, ident
-    roles = ""
+  def self.create_server name, flavor, location, provtags
+    roles = provtags.join ','
     # 14.04
-    image = 'b39f27a8b8c64d52b05eac6a62ebad85__Ubuntu-14_04_2_LTS-amd64-server-20150309-en-us-30GB'
+    image = flavor['imageid'] || 'b39f27a8b8c64d52b05eac6a62ebad85__Ubuntu-14_04_2_LTS-amd64-server-20150309-en-us-30GB'
     dns = name.gsub('_', '-')
-    return `yes|bundle exec knife azure server create -r "#{roles}" --azure-vm-name #{name} --azure-dns-name "perfrun-#{dns}" -N #{dns} -I #{image} --azure-vm-size "#{instance}" -V -m "#{location}" --ssh-user '#{login_as}' --ssh-port 22 --identity-file #{ident} 2>&1`
+    return `yes|bundle exec knife #{CHEF_PROVIDER} server create -r "#{roles}" --azure-vm-name '#{name}' --azure-dns-name "perfrun-#{dns}" -N '#{dns}' -I '#{image}' --azure-vm-size "#{flavor['flavor']}" -V -m "#{location}" --ssh-user '#{flavor['login_as']}' --ssh-port 22 --identity-file '#{flavor['keyfile']}'  #{flavor['additional']} 2>&1`
   end
 
   def self.delete_server name, id, location, diskuuid=nil

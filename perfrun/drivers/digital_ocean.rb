@@ -4,12 +4,7 @@ class DigitalOceanDriver
   CHEF_PROVIDER='digital_ocean'
   MAXJOBS = 1
   PROVIDER_ID = 110
-  LOGIN_AS='root'
-
-  # @override
-  def self.fullinstname instname, instloc
-    instname+'-'+instloc.gsub(' ', '-')
-  end
+  LOGIN_AS = 'root'
 
   def self.get_active location, all, &block
     servers = `bundle exec knife #{CHEF_PROVIDER} droplet list`
@@ -33,15 +28,16 @@ class DigitalOceanDriver
     end
   end	     
 
-  def self.create_server name, instance, location, login_as, ident
-    roles = ""
-    image = get_image location
+  def self.create_server name, flavor, location, provtags
+    roles = provtags.join ','
+    image = flavor['imageid'] || get_image(location)
     if image.nil?
       puts "can't find image for location #{location}"
       exit 0
     end
-    keys = "--ssh-keys 950977"
-    return `yes|bundle exec knife digital_ocean droplet create --server-name #{name} --image #{image} --location #{location} --size #{instance}  --bootstrap #{keys} -i #{ident} --run-list \"#{roles}\"  2>&1`
+    cmd = "yes|bundle exec knife #{CHEF_PROVIDER} droplet create --server-name '#{name}' --image '#{image}' --location '#{location}' --size '#{flavor['flavor']}'  --bootstrap --ssh-keys '#{flavor['keyname']}' -i '#{flavor['keyfile']}' -x '#{flavor['login_as']}' --run-list \"#{roles}\" #{flavor['additional']} 2>&1"
+    rv = `#{cmd}`
+    rv
   end
 
   def self.delete_server s, id, location, diskuuid=nil

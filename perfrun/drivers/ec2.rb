@@ -3,7 +3,7 @@ class Ec2Driver
   CHEF_PROVIDER='ec2'
   MAXJOBS = 1
   PROVIDER_ID = 67
-  LOGIN_AS='ubuntu'
+  LOGIN_AS = 'ubuntu'
 
   def self.get_active location, all, &block
     servers = `bundle exec knife #{CHEF_PROVIDER} server list --region #{location}`
@@ -21,34 +21,36 @@ class Ec2Driver
     end
   end	     
 
-  def self.create_server name, instance, location, login_as, ident
-    roles = ""
-    case location
+  def self.create_server name, flavor, location, provtags
+    roles = provtags.join ','
+    image = flavor['imageid']
+    if ! image
+      case location
       when 'us-east-1'
-      image = 'ami-9a562df2'
+        image = 'ami-9a562df2'
       when 'us-west-1'
-      image = 'ami-057f9d41'
+        image = 'ami-057f9d41'
       when 'us-west-2'
-      image = 'ami-51526761'
+        image = 'ami-51526761'
       when 'eu-west-1'
-      image = 'ami-2396f654'
+        image = 'ami-2396f654'
       when 'eu-central-1'
-      image = 'ami-00dae61d'
+        image = 'ami-00dae61d'
       when 'ap-southeast-1'
-      image = 'ami-76546924'
+        image = 'ami-76546924'
       when 'ap-southeast-2'
-      image = 'ami-cd611cf7'
+        image = 'ami-cd611cf7'
       when 'ap-northeast-1'
-      image = 'ami-c011d4c0'
+        image = 'ami-c011d4c0'
       when 'sa-east-1'
-      image = 'ami-75b23768'
+        image = 'ami-75b23768'
+      end
     end
-    ident = "-i #{ident} -x ubuntu -S benchmark"
-    return `yes|bundle exec knife #{CHEF_PROVIDER} server create --region "#{location}" -N #{name} --flavor #{instance} --image #{image} #{ident} --run-list "#{roles}"`
-
+    return `yes|bundle exec knife #{CHEF_PROVIDER} server create --region "#{location}" -N '#{name}' --flavor '#{flavor['flavor']}' --image '#{image}' -i '#{flavor['keyfile']}' -x '#{flavor['login_as']}' -S '#{flavor['keyname']}' --run-list "#{roles}" #{flavor['additional']} 2>&1`
   end
 
   def self.delete_server s, id, location, diskuuid=nil
     "yes|bundle exec knife #{CHEF_PROVIDER} server delete --region #{location} -N #{s} #{id} --purge"
   end
+
 end

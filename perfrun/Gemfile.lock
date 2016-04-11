@@ -1,13 +1,4 @@
 GIT
-  remote: git://github.com/burstorm/knife-hp.git
-  revision: 879ed5aef4fc731b6d677f6e10cd479ded7a4ba8
-  branch: master
-  specs:
-    knife-hp (0.4.2)
-      chef (>= 11.0)
-      fog (>= 1.20)
-
-GIT
   remote: git://github.com/burstorm/knife-rackspace.git
   revision: d361c9a3c4dbd0c1b25fae955757d8003835db82
   branch: master
@@ -402,7 +393,6 @@ DEPENDENCIES
   knife-digital_ocean
   knife-ec2
   knife-google (>= 1.3.2)!
-  knife-hp!
   knife-linode
   knife-rackspace!
   knife-softlayer!

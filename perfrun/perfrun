@@ -1,12 +1,11 @@
 #!/usr/bin/env ruby
-
 require 'optparse'
 require './perfdriver'
 require './drivers/rackspace'
 
 class PerfRun
   TESTTIME = 12*60*60
-  CONFIG = "config/perfrun.config"
+  CONFIG = "config/perfrun.json"
   CRED_CONFIG = "config/credentials.config"
 
   @programname = $PROGRAM_NAME
@@ -23,10 +22,10 @@ class PerfRun
   @sleeptmo = 60*30   # wake timeout to check on progress
   
   def self.oneoffrun     
-    $perfrun_table.each do |obj|
-      next if obj['instances'].length == 0
+    @objs.each do |obj|
+      next if obj['compute_scopes'].length == 0
       if ARGV.length > 0
-        prov = obj['instances'][0]['provider']
+        prov = obj['provider']['cloud_driver']
         next if ! ARGV.include? prov
       end
       runone obj
@@ -37,35 +36,34 @@ class PerfRun
   def self.daemonrun 
     killdaemon true
     nextfill = Time.now
-    objs = $perfrun_table
     begin
       while true
         puts "\033[1mchecking run at #{Time.now.to_s} (nextfill @#{nextfill.to_s})\033[m"
         checkthreads
         if nextfill <= Time.now
           puts "refilling schedule..."
-          objs.each do |obj|
+          @objs.each do |obj|
             obj[:nextrun] = roll
             #puts "#{obj.inspect}" if @verbose > 0
           end
           nextfill = Time.now+(@period*24*60*60)
         end
-        objs.each do |obj|
+        @objs.each do |obj|
           obj[:nextrun].sort! { |a, b| 
             a[:run_at] - b[:run_at]
           }
         end      
-        objs.sort! { |a, b| 
+        @objs.sort! { |a, b| 
           a = a[:nextrun].length > 0 ? a[:nextrun][0][:run_at].to_i : Float::INFINITY
           b = b[:nextrun].length > 0 ? b[:nextrun][0][:run_at].to_i : Float::INFINITY
           a - b
         }
         watchdog
         now = Time.now
-        objs.each do |obj|
+        @objs.each do |obj|
           obj[:nextrun].each_with_index do |runtime, idx|
-            prov = obj['instances'][0]['provider']
-            loc = obj['instances'][0]['location']
+            prov = obj['provider']['name']
+            loc = obj['provider']['location_flavor']
             if runtime[:run_at] > now
               puts "#{prov}/#{loc} will run at #{runtime[:run_at]} (#{((runtime[:run_at]-now)/3600).round} hours from now)" if idx == 0
               next
@@ -95,11 +93,12 @@ class PerfRun
   end
 
   def self.runone obj
-    prov = obj['instances'][0]['provider']
-    loc = obj['instances'][0]['location']
+    prov = obj['provider']['name']
+    loc = obj['provider']['location_flavor']
     opts = {}
     opts[:verbose] = @verbose
-    opts[:instances] = obj['instances']
+    opts[:object] = obj
+    opts[:tags] = @tags
     opts[:mode] = @mode
     opts[:app_host] = @app_host if @app_host
     if @mode == 'run' or @mode == 'delete'
@@ -186,8 +185,32 @@ class PerfRun
       load CRED_CONFIG
     rescue
     end
-    load @config
+    begin
+      @project = JSON.parse File.read(@config)
+    rescue Exception => e
+      puts "JSON parse error: #{e.message} #{e.backtrace.join('\n')}"
+      exit 1
+    end
     nstart = 0
+    case @project['ptype']
+    when 'contract'
+      @objs = @project['contracts']
+    when 'quote'
+      @objs = @project['quotes']
+    when 'objective'
+      @objs = @project['objectives']
+    else
+      if @project['compute_scopes']
+        @objs = [@project]
+      else
+        puts "Unknown project type: #{@project['ptype']}. Probably the wrong kind of JSON API file."
+        puts @project.inspect
+        exit 1
+      end
+    end
+    # XXX for host driver
+    $objs = @objs
+    @tags = @project['tags']
     if @daemon
       daemonrun
     else
@@ -316,7 +339,7 @@ class PerfRun
             now = Time.now
             found = false
             # but don't kill them if it's about to run
-            $perfrun_table.each do |obj|
+            @objs.each do |obj|
               next if obj[:nextrun].length == 0
               if obj[:nextrun][0][:run_at] < now+5*60
                 found = true
