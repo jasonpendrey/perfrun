@@ -29,14 +29,43 @@ class DigitalOceanDriver
   end	     
 
   def self.create_server name, flavor, location, provtags
-    roles = provtags.join ','
-    image = flavor['imageid'] || get_image(location)
-    if image.nil?
-      puts "can't find image for location #{location}"
-      exit 0
+    roles = []
+    provtags.each do |tag|
+      roles.push 'role['+tag+']'
     end
-    cmd = "yes|bundle exec knife #{CHEF_PROVIDER} droplet create --server-name '#{name}' --image '#{image}' --location '#{location}' --size '#{flavor['flavor']}'  --bootstrap --ssh-keys '#{flavor['keyname']}' -i '#{flavor['keyfile']}' -x '#{flavor['login_as']}' --run-list \"#{roles}\" #{flavor['additional']} 2>&1"
-    rv = `#{cmd}`
+    roles = roles.join ','
+    image = flavor['imageid']
+    image = get_image(location) if image.blank?
+    if image.blank?
+      puts "can't find image for location #{location}"
+      return nil
+    end
+    if flavor['keyname'].blank?
+      puts "must specify keyname"
+      return nil
+    end
+    if flavor['flavor'].blank?
+      puts "must specify flavor"
+      return nil
+    end
+    if flavor['login_as'].blank?
+      puts "must specify login_as"
+      return nil
+    end
+    if flavor['keyfile'].blank?
+      puts "must specify keyfile"
+      return nil
+    end
+    scriptln = "yes|bundle exec knife #{CHEF_PROVIDER} droplet create --server-name '#{name}' --image '#{image}' --location '#{location}' --size '#{flavor['flavor']}'  --bootstrap --ssh-keys '#{flavor['keyname']}' -i '#{flavor['keyfile']}' -x '#{flavor['login_as']}' --run-list \"#{roles}\" #{flavor['additional']} 2>&1"
+    puts "#{scriptln}"    
+    rv = ''
+    IO.popen scriptln do |fd|
+      fd.each do |line|
+        puts line
+        STDOUT.flush
+        rv += line
+      end
+    end
     rv
   end
 

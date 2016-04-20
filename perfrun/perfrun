@@ -107,6 +107,7 @@ class PerfRun
         curthread[:thread] = Thread.current
         puts "#{@mode.capitalize} from #{prov}/#{loc} at #{Time.now}"
         curthread[:pd] = pd = PerfDriver.new
+        pd.verbose = @verbose
         pd.run opts
         delthread curthread
       }
@@ -116,6 +117,7 @@ class PerfRun
     else
       puts "#{@mode.capitalize} #{prov}/#{loc}"
       pd = PerfDriver.new
+      pd.verbose = @verbose
       pd.run opts
     end
   end
@@ -167,7 +169,8 @@ class PerfRun
           spec = b.split ':'
           uuid = spec[0]
           loc = spec [1]
-          RackspaceVolumes.delete_volume({'id' => uuid}, loc)
+          RackspaceDriver.location =  loc
+          RackspaceDriver.delete_volume({'id' => uuid})
           exit 0
         }
       end.parse!
@@ -210,7 +213,7 @@ class PerfRun
     end
     # XXX for host driver
     $objs = @objs
-    @tags = @project['tags']
+    @tags = @project['project_tags']
     if @daemon
       daemonrun
     else

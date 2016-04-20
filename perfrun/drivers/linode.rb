@@ -28,10 +28,32 @@ class LinodeDriver
   end	     
 
   def self.create_server name, flavor, location, provtags
-    roles = provtags.join ','
-    # the image corresponds to ubuntu 14.04
-    image = flavor['imageid'] || '124'
-    return `yes|bundle exec knife #{CHEF_PROVIDER} server create -r "#{roles}" -L '#{name}' -N '#{name}' -I '#{image}' -f '#{flavor['flavor']}' --distro chef-full -x '#{flavor['login_as']}' -D "#{location}" #{flavor['additional']} 2>&1`
+    roles = []
+    provtags.each do |tag|
+      roles.push 'role['+tag+']'
+    end
+    roles = roles.join ','
+    image = flavor['imageid']
+    image = '124' if image.blank?
+    if flavor['flavor'].blank?
+      puts "must specify flavor"
+      return nil
+    end
+    if flavor['login_as'].blank?
+      puts "must specify login_as"
+      return nil
+    end
+    scriptln = "yes|bundle exec knife #{CHEF_PROVIDER} server create -r '#{roles}' -L '#{name}' -N '#{name}' -I '#{image}' -f '#{flavor['flavor']}' --distro chef-full -x '#{flavor['login_as']}' -D '#{location}' #{flavor['additional']} 2>&1"
+    puts "#{scriptln}"
+    rv = ''
+    IO.popen scriptln do |fd|
+      fd.each do |line|
+        puts line
+        STDOUT.flush
+        rv += line
+      end
+    end
+    rv
   end
 
   def self.delete_server s, id, location, diskuuid=nil

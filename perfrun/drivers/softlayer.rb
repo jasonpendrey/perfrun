@@ -22,10 +22,41 @@ class SoftlayerDriver
   end	     
 
   def self.create_server name, flavor, location, provtags
-    roles = provtags.join ','
+    roles = []
+    provtags.each do |tag|
+      roles.push 'role['+tag+']'
+    end
+    roles = roles.join ','
+    if flavor['keyname'].blank?
+      puts "must specify keyname"
+      return nil
+    end
+    if flavor['flavor'].blank?
+      puts "must specify flavor"
+      return nil
+    end
+    if flavor['login_as'].blank?
+      puts "must specify login_as"
+      return nil
+    end
+    if flavor['keyfile'].blank?
+      puts "must specify keyfile"
+      return nil
+    end
     # 14.04
-    image = flavor['imageid'] || '6b7df4f0-cfed-4550-ae0b-a48944e1792a'
-    return `yes|bundle exec knife #{CHEF_PROVIDER} server create --hostname '#{name}' --domain burstorm.com --datacenter "#{location}" -r "#{roles}" -N '#{name}' --image-id '#{image}' #{flavor['flavor']} -i '#{flavor['keyfile']}' --ssh-keys '#{flavor['keyname']}' -x '#{flavor['login_as']}' #{flavor['additional']} 2>&1`
+    image = flavor['imageid']
+    image = '6b7df4f0-cfed-4550-ae0b-a48944e1792a' if image.blank?
+    scriptln = "yes|bundle exec knife #{CHEF_PROVIDER} server create --hostname '#{name}' --domain burstorm.com --datacenter '#{location}' -r '#{roles}' -N '#{name}' --image-id '#{image}' #{flavor['flavor']} -i '#{flavor['keyfile']}' --ssh-keys '#{flavor['keyname']}' -x '#{flavor['login_as']}' #{flavor['additional']} 2>&1"
+    puts "#{scriptln}"
+    rv = ''
+    IO.popen scriptln do |fd|
+      fd.each do |line|
+        puts line
+        STDOUT.flush
+        rv += line
+      end
+    end
+    rv
   end
 
   def self.delete_server s, id, location, diskuuid=nil

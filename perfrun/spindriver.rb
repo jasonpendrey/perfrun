@@ -1,8 +1,8 @@
 require 'optparse'
 require 'active_support/all'  # for camelize
 
-class PerfDriver
-  WATCHDOGTMO = 10*60       # for creation
+class SpinDriver
+  WATCHDOGTMO = 30*60       # for creation
   WATCHDOGTMO2 = 30*60      # for running tests
   SSHOPTS = "-o LogLevel=quiet -oStrictHostKeyChecking=no"
 
@@ -33,10 +33,10 @@ class PerfDriver
     @mutex = Mutex.new
     @jobwait = 0 
     watchdog
-    log "Perfrun for #{object['name']}@#{@curprovider}/#{@curlocation} to #{@app_host}" if @mode == 'run'
     begin
       active = {}
       alines = []
+      log "Spining up #{object['name']} objectives..." if @mode == 'run'
       object['compute_scopes'].each do |scope|
         break if @aborted
         flavor = scope['flavor']
@@ -51,7 +51,7 @@ class PerfDriver
           next
         end
         flavor['login_as'] = login_as if flavor['login_as'].blank?
-        if flavor['keyfile']
+        unless flavor['keyfile'].blank?
           if ! flavor['keyfile'].include?('/') and ! flavor['keyfile'].include?('..')
             flavor['keyfile'] = "#{Dir.pwd}/config/#{flavor['keyfile']}"
           end
@@ -59,7 +59,7 @@ class PerfDriver
           flavor['keyfile'] = "#{Dir.pwd}/config/servers.pem"
         end
         fullname = fullinstname scope, @curlocation
-        log "Running #{fullname}..." if @mode == 'run'
+        log "Spining up #{fullname}..." if @mode == 'run'
         active = {}
         alines = []
         get_active @curlocation, @mode != 'run' do |id, name, ip, state|
@@ -79,11 +79,8 @@ class PerfDriver
           if ! active.include? fullname or ! aline or ! aline[:ip]
             next unless start_server fullname, scope, @curlocation
           else
-            ssh_remove_ip aline[:ip]
-            cmd = "(echo 'logging into #{fullname}...' && ./RunRemote  -O '#{scope['id']}' -I '#{scope['details']}' -i '#{flavor['keyfile']}' -H '#{@app_host}' -K #{APP_KEY} -S #{APP_SECRET} #{flavor['login_as']}@#{aline[:ip]}) >> #{logfile} 2>&1"
-            @mutex.synchronize do
-              @pids.push({pid: spawn(cmd), fullname: fullname,  inst: scope['details'], loc: @curlocation, started_at: Time.now})
-            end
+            log "#{fullname} already exists... skipping"
+            next
           end
           if @threads.length >= @maxjobs
             waitthreads
@@ -100,7 +97,7 @@ class PerfDriver
                   @pids.push({pid: spawn(cmd+'||true'), fullname: fullname, inst: fullname, loc: @curlocation, started_at: Time.now})
                 end
               elsif @mode == 'list'
-                puts sprintf("#{@curlocation}\t%-20s\t#{aline[:id]}\t#{aline[:state]}", fullname)
+                puts sprintf("#{@curlocation}\t%-20s\t#{aline[:id]}\t#{aline[:ip]}\t#{aline[:state]}", fullname)
               end
             end
             if @mode == 'knifelist'
@@ -113,7 +110,7 @@ class PerfDriver
       waitthreads
       waitpids
     rescue Exception => e
-      log "\n\n***Perfdriver: cleaning up because of #{e.inspect} ***"
+      log "\n\n***Spindriver: cleaning up because of #{e.inspect} ***"
       log e.backtrace.join "\n"
       log " threads: #{@threads.inspect}"
       log " pids: #{@pids.inspect}"
@@ -127,7 +124,7 @@ class PerfDriver
           @errorinsts.uniq!
           log "instances that didn't complete: #{@errorinsts.join(',')}"
         end
-        log "\033[1mRun aborted for #{objects}\033[m" 
+        log "<b>Run aborted for #{objects}</b>" 
       else
         killall
       end
@@ -135,12 +132,12 @@ class PerfDriver
     end
     @watchdog.kill if @watchdog
     if @mode == 'run'
-      cleanup
+      #cleanup
       if @errorinsts.length > 0
         @errorinsts.uniq!
         log "instances that didn't complete: #{@errorinsts.join(',')}"
       end
-      log "\033[1mPerfrun #{@curprovider}/#{@curlocation} done at #{Time.now}; #{((Time.now-@started_at)/60).round} minutes\033[0m"
+      log "<b>Spinup #{@curprovider}/#{@curlocation} done at #{Time.now}; #{((Time.now-@started_at)/60).round} minutes</b>"
     end
   end
 
@@ -164,7 +161,7 @@ class PerfDriver
   end
 
   def waitthreads
-    log "\033[1mStart waiting for #{@threads.length} threads: #{@threads.inspect}\033[m" if @threads.length > 0
+    log "<b>Start waiting for #{@threads.length} threads: #{@threads.inspect}</b>" if @threads.length > 0
     while @threads.length > 0
       @mutex.synchronize do 
         @threads.each_with_index do |t, idx|
@@ -172,7 +169,7 @@ class PerfDriver
             @threads.delete_at idx
             next
           end
-          log "waiting for #{t[:fullname]} to start" if @verbose > 0
+          log "waiting for #{t[:fullname]} to start" if @verbose > 1
         end
       end
       STDOUT.flush
@@ -181,7 +178,7 @@ class PerfDriver
   end
 
   def waitpids
-    log "\033[1mwaiting for #{@pids.inspect}\033[m" if @pids.length > 0
+    log "<b>waiting for #{@pids.inspect}</b>" if @pids.length > 0
     while @pids.length > 0
       log "Run: waiting for #{@pids.inspect}" if @verbose > 0
       @mutex.synchronize do 
@@ -279,26 +276,6 @@ class PerfDriver
         end
         log "Running created #{fullname} ip=#{ip} id=#{id}"
         ssh_remove_ip ip
-        if pass
-          ntry = 0
-          while ntry < 5
-            break if system ("sshpass -p #{pass} ssh #{SSHOPTS} #{flavor['login_as']}@#{ip} 'mkdir -p .ssh; chmod 0700 .ssh; echo \"#{@pubkey}\" >> .ssh/authorized_keys'")
-            log "retry #{ntry} insert pubkey to authkeys..."
-            ntry += 1
-            sleep 5
-          end
-          if ntry >= 5
-            log "can't insert public key into #{fullname}"
-            @errorinsts.push "#(fullname} (can't insert public key)"
-            delthread curthread
-            return false
-          end
-        end
-        cmd = "(./RunRemote -I '#{scopename}' -O '#{scope_id}' -i '#{flavor['keyfile']}' -H '#{@app_host}' -K #{APP_KEY} -S #{APP_SECRET} --create-time #{cretime} #{flavor['login_as']}@#{ip} && " +(delete_server(fullname, id, locflavor, diskuuid))+ ")  >> #{logfile} 2>&1"
-        log "cmd=#{cmd}" if @verbose > 0
-        @mutex.synchronize do 
-          @pids.push({pid: spawn(cmd), fullname: fullname, inst: scopename, loc: locflavor, started_at: Time.now})
-        end
         delthread curthread
       rescue => e
         log "caught error starting server #{fullname}: #{e.message}" 
@@ -315,7 +292,7 @@ class PerfDriver
   def status
     status = ""
     if @threads.length > 0
-      status += "   starting  "
+      status += "   spinning up: "
       @threads.each do |t|
         status += "#{t[:fullname]} "
       end
@@ -348,8 +325,8 @@ class PerfDriver
     @watchdog = Thread.new {
       while true        
         begin
-          if @verbose > 0
-            log "Perfdriver WD: pids=#{@pids.inspect}"
+          if @verbose > 1
+            log "Spindriver WD: pids=#{@pids.inspect}"
             log "    threads=#{@threads.inspect}" 
           end
           now = Time.now
@@ -437,12 +414,12 @@ class PerfDriver
       opts = @opts.clone
       opts[:mode] = 'delete'
       r = self.class.new
-      r.run opts
+#      r.run opts
     end
     system "reset -I 2>/dev/null"
   end
 
-  # driver related calls
+  # driver wrappers
 
   def create_server name, flavor, location, provtags
     @driver.create_server name, flavor, location, provtags
@@ -462,7 +439,8 @@ class PerfDriver
       @driver.fullinstname scope, locflavor
     else
       scopename = scope['details'] || 'compute-'+scope['id']
-      rv = scopename+'-'+(locflavor || 'no-location')
+#      rv = scopename+'-'+(locflavor || 'no-location')
+      rv = scopename
       rv.gsub(/[ \/]/, '-')
     end
   end
@@ -480,6 +458,7 @@ class PerfDriver
       File.write logfile, msg+"\n", mode: 'a'
     rescue
     end
+    puts msg if @verbose  > 0
   end
 
   def logfile

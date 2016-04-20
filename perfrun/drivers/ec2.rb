@@ -22,9 +22,29 @@ class Ec2Driver
   end	     
 
   def self.create_server name, flavor, location, provtags
-    roles = provtags.join ','
+    roles = []
+    provtags.each do |tag|
+      roles.push 'role['+tag+']'
+    end
+    roles = roles.join ','
+    if flavor['keyname'].blank?
+      puts "must specify keyname"
+      return nil
+    end
+    if flavor['flavor'].blank?
+      puts "must specify flavor"
+      return nil
+    end
+    if flavor['login_as'].blank?
+      puts "must specify login_as"
+      return nil
+    end
+    if flavor['keyfile'].blank?
+      puts "must specify keyfile"
+      return nil
+    end
     image = flavor['imageid']
-    if ! image
+    if image.blank?
       case location
       when 'us-east-1'
         image = 'ami-9a562df2'
@@ -46,7 +66,17 @@ class Ec2Driver
         image = 'ami-75b23768'
       end
     end
-    return `yes|bundle exec knife #{CHEF_PROVIDER} server create --region "#{location}" -N '#{name}' --flavor '#{flavor['flavor']}' --image '#{image}' -i '#{flavor['keyfile']}' -x '#{flavor['login_as']}' -S '#{flavor['keyname']}' --run-list "#{roles}" #{flavor['additional']} 2>&1`
+    scriptln = "yes|bundle exec knife #{CHEF_PROVIDER} server create --region '#{location}' -N '#{name}' --flavor '#{flavor['flavor']}' --image '#{image}' -i '#{flavor['keyfile']}' -x '#{flavor['login_as']}' -S '#{flavor['keyname']}' --run-list '#{roles}' #{flavor['additional']} 2>&1"
+    puts "#{scriptln}"
+    rv = ''
+    IO.popen scriptln do |fd|
+      fd.each do |line|
+        puts line
+        STDOUT.flush
+        rv += line
+      end
+    end
+    rv
   end
 
   def self.delete_server s, id, location, diskuuid=nil
