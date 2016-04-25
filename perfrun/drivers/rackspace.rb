@@ -1,6 +1,6 @@
 require "json"
 
-class RackspaceDriver
+class RackspaceDriver < Provider
 
   PROVIDER = 'Rackspace'
   PROVIDER_ID = 39
@@ -8,49 +8,35 @@ class RackspaceDriver
   MAXJOBS = 1
   LOGIN_AS = 'root'
   IDENTURL = 'https://identity.api.rackspacecloud.com/v2.0/tokens'
+  DEFIMAGE = '28153eac-1bae-4039-8d9f-f8b513241efe'   # Unbuntu 14.04 PVHVM
 
-  @auth = nil
-  @location = 'DFW'
+  @authlocs = {}
   @keypath = "config"
+  @verbose = 0
 
-  def self.get_active location, all, &block  
-    config = location.upcase == 'LON' ? ' -c .chef/knife.rsuk.rb ' : '';
-    servers = `bundle exec knife #{CHEF_PROVIDER} server list --rackspace-region "#{location}" #{config}`
-    srv = servers.split "\n"
-    srv.shift
-    srv.each do |s|
-      line = s.split ' '
-      id = line[0]
-      name = line[1]
-      flavor = line[4]
-      ip = line[2]
-      state = line.last
-      if state == 'active' or all
+  def self.get_active loc, all, &block      
+    srvs = list_servers loc
+    srvs['servers'].each do |server|
+      state = server['status']
+      id = server['id']
+      ip = server['accessIPv4']
+      name = server['name']
+      if state == 'ACTIVE' or all
         yield id, name, ip, state
-      end
-    end	     
+      end      
+    end
   end
 
-  def self.delete_server s, id, location, diskuuid=nil
-    config = location.upcase == 'LON' ? ' -c .chef/knife.rsuk.rb ' : '';
-    out = "yes|bundle exec knife #{CHEF_PROVIDER} server delete -N #{s}  #{id} --purge  --rackspace-region #{location} #{config}"
-    if diskuuid
-      out += "; ./perfrun --delete-rackspace-disk #{diskuuid}:#{location}"
+  def self.delete_server name, id, loc, flavor
+    self._delete_server id, loc
+    if flavor['provisioning'] == 'chef'
+      ChefDriver.chef_delete_node(name) 
     end
-    out
+    nil
   end
 
-  def self.create_server name, flavor, location, provtags
-    if location.upcase == "LON"
-      config = ' -c .chef/knife.rsuk.rb '
-    else
-      config = ''
-    end
-    roles = []
-    provtags.each do |tag|
-      roles.push 'role['+tag+']'
-    end
-    roles = roles.join ','
+  def self.create_server name, flavor, loc, provtags
+    loc = loc.upcase
     if flavor['flavor'].blank?
       puts "must specify flavor"
       return nil
@@ -59,61 +45,77 @@ class RackspaceDriver
       puts "must specify login_as"
       return nil
     end
+    keyname = flavor['keyname']
     image = flavor['imageid']
-    # 14.04 PVHVM
-    image = '28153eac-1bae-4039-8d9f-f8b513241efe' if image.blank?
+    image = DEFIMAGE if image.blank?
     rv = ''
     instance = flavor['flavor'].to_s
-    if ! instance.start_with? "compute1-" and ! instance.start_with? "memory1-"
-      image = "--image '#{image}'"
-    else
-      self.location = location
-      uuid = create_volume name, image
-      image = "-B '#{uuid}'"
-      rv += uuid + "\n"
-      rv += "DISKUUID: #{uuid}\n"
+    createvol = false
+    if instance.start_with? "compute1-" or instance.start_with? "memory1-"
+      createvol = true
     end
-    scriptln = "yes|bundle exec knife #{CHEF_PROVIDER} server create -r '#{roles}' --server-name '#{name}' -N '#{name}' #{image} --flavor '#{instance}' -V --ssh-user '#{flavor['login_as']}' --rackspace-region '#{location}' #{config} #{flavor['additional']} 2>&1"
-    puts "#{scriptln}"
-    IO.popen scriptln do |fd|
-      fd.each do |line|
-        puts line
-        STDOUT.flush
-        rv += line
+    rrv = self._create_server name, instance, loc, keyname, image, createvol
+    if rrv.nil? or ! rrv['server']
+      puts "can't create #{name}: #{rrv}"
+      return nil
+    end
+    if rrv.nil? or rrv['server'].nil?
+      puts "bad return value from server create: #{rrv}"
+      return nil
+    end
+    id = rrv['server']['id']
+    ip = nil
+    pass = nil
+    if keyname.blank?
+      pass = rrv['server']['adminPass']      
+      rv += "Password: #{pass}\n" 
+    end
+    nretry = 30
+    while nretry > 0 do
+      sleep 10
+      server = self.fetch_server id, loc
+      if server.nil? or ! server['server']
+        puts "bad fetch_server: #{server}"
+        return nil
       end
+      puts "#{name} status: #{server['server']['status']}" if @verbose > 0
+      begin
+      if server['server']['status'] == 'ACTIVE'
+        ip = server['server']['accessIPv4']
+        break
+      end
+      rescue Exception => e
+        puts "server=#{server}"
+      end
+      nretry -= 1
+    end
+    if nretry <= 0
+      return "ERROR: timed out creating #{name}\n"
+    end
+    if flavor['provisioning'] == 'chef'
+      sleep 1
+      ChefDriver.verbose = @verbose
+      rv += ChefDriver.chef_bootstrap ip, name, provtags, flavor, loc, pass, config(loc) 
     end
     rv
   end
 
-  def self.log msg
-    File.write logfile, msg+"\n", mode: 'a'
-  end
-
-  def self.logfile
-    "logs/#{CHEF_PROVIDER}.log"
-  end
-
-
-  def self.location= loc
-    @location = loc
-  end
-
-  def self.keypath= path
-    @keypath = path
+  def self.config loc
+    loc = loc.upcase
+    @keypath + (loc == "LON" ? '/knife.rsuk.rb' : '/knife.rb')
   end
 
   # XXX there's probably a better way to read knife.rb...
-  def self.get_keys
-    if @location.upcase != 'LON'
-      file = 'knife.rb'
-    else
-      file = 'knife.rsuk.rb'
-    end
+  def self.get_keys loc
     ukey = "knife[:rackspace_api_username]"
     akey = "knife[:rackspace_api_key]"
     rv = {}
-    file = "#{@keypath}/#{file}"
-    File.open(file).each do |line|
+    File.open(self.config loc).each do |line|
+      # kill comments
+      idx = line.index '#'
+      unless idx.nil?
+        line = line[0..idx-1]
+      end
       if line.start_with? ukey
         l = line.split '='
         rv[:username] = l[1].strip[1..-2]
@@ -126,56 +128,67 @@ class RackspaceDriver
     rv
   end
 
-  def self.curlauth method, endpoint=nil
-    rv = "curl -X #{method} -H \"X-Auth-Token: #{@auth[:token]}\" -H \"Content-Type: application/json\" "
-    rv += " #{@auth[endpoint]}" if endpoint
+  def self.curlauth method, loc, endpoint=nil
+    auth = self.get_auth loc
+    rv = "curl -X #{method} -H \"X-Auth-Token: #{auth[:token]}\" -H \"Content-Type: application/json\" "
+    rv += " #{auth[endpoint]}" if endpoint
   end
 
-  def self.get_auth
-    location = @location.upcase
-    return @auth if @auth and @authloc == location
-    @authloc = location
-
-    authjs = `curl -X 'POST' -s #{IDENTURL} -d '{"auth":{"RAX-KSKEY:apiKeyCredentials": #{get_keys.to_json}}}' -H "Content-Type: application/json"`
+  def self.get_auth loc
+    if @authlocs[loc]
+      return @authlocs[loc]
+    end
+    cmd = "curl -X 'POST' -s #{IDENTURL} -d '{\"auth\":{\"RAX-KSKEY:apiKeyCredentials\": #{get_keys(loc).to_json}}}' -H \"Content-Type: application/json\""
+    authjs = `#{cmd}`
     # XXX
-    auth = JSON.parse (authjs)
-    @auth = { token: auth['access']['token']['id']}
+    begin
+      auth = JSON.parse (authjs)
+    rescue Exception => e
+      puts "can't get rs auth: #{cmd}"
+      puts "rv: #{authjs}"
+      raise e
+    end
+    if auth['access'].nil?      
+      puts "can't get rs auth: #{cmd}"
+      puts "rv: #{authjs}"
+      raise e
+    end
+    rv = { token: auth['access']['token']['id']}
     dnsendpoint = storageendpoint = serverendpoint = nil
     dnstenant = storetenant = servertenant = nil
     auth['access']['serviceCatalog'].each do |service|
       if service['name'] == 'cloudBlockStorage'
         service['endpoints'].each do |ep|
-          next if ep['region'] != location
-          @auth[:storagetenant] = ep['tenantId']
-          @auth[:storageendpoint] = ep['publicURL']
+          next if ep['region'] != loc
+          rv[:storagetenant] = ep['tenantId']
+          rv[:storageendpoint] = ep['publicURL']
           break
         end
-      elsif service['name'] == 'cloudServers'
-        service['endpoints'].each do |ep|
-          @auth[:servertenant] = ep['tenantId']
-          @auth[:serverendpoint] = ep['publicURL']
+      elsif service['name'] == 'cloudServersOpenStack'
+        service['endpoints'].each do |ep|          
+          next if ep['region'] != loc
+          rv[:servertenant] = ep['tenantId']
+          rv[:serverendpoint] = ep['publicURL']
           break
         end
       elsif service['name'] == 'cloudDNS'
         service['endpoints'].each do |ep|
-          @auth[:dnstenant] = ep['tenantId']
-          @auth[:dnsendpoint] = ep['publicURL']
+          rv[:dnstenant] = ep['tenantId']
+          rv[:dnsendpoint] = ep['publicURL']
           break
         end
       end
     end
-    @auth
+    @authlocs[loc] = rv
   end
 
   def self.list_domains
-    self.get_auth
-    cmd = "#{curlauth('GET', :dnsendpoint)}/domains/ 2>/dev/null"
+    cmd = "#{curlauth('GET', "DFW", :dnsendpoint)}/domains/ 2>/dev/null"
     cvol = `#{cmd}`
     JSON.parse (cvol)
   end
 
   def self.domainid domain
-    self.get_auth
     domains = list_domains
     return nil if domains.nil?
     domains['domains'].each do |d|
@@ -195,15 +208,15 @@ class RackspaceDriver
                         data: ip,
                         ttl: ttl
                       }]
-    }.to_json
-    cmd = "#{curlauth('POST', :dnsendpoint)}/domains/#{id}/records -d '#{req}'  2>/dev/null"
+    }
+    cmd = "#{curlauth('POST', "DFW", :dnsendpoint)}/domains/#{id}/records -d '#{req.to_json}'  2>/dev/null"
     rv = `#{cmd}`    
     JSON.parse (rv)
   end
 
   def self.fetch_dns domain, label
     id = domainid domain
-    cmd = "#{curlauth('GET', :dnsendpoint)}/domains/#{id}/records 2>/dev/null"
+    cmd = "#{curlauth('GET', "DFW", :dnsendpoint)}/domains/#{id}/records 2>/dev/null"
     rv = `#{cmd}`
     rv = JSON.parse (rv)    
     return nil if rv.nil?
@@ -216,69 +229,80 @@ class RackspaceDriver
   def self.del_dns domain, label
     r = fetch_dns domain, label
     return nil if r.nil?
-    cmd = "#{curlauth('DELETE', :dnsendpoint)}/domains/#{@curdomain['id']}/records/#{r['id']}\" 2>/dev/null"
+    cmd = "#{curlauth('DELETE', "DFW", :dnsendpoint)}/domains/#{@curdomain['id']}/records/#{r['id']} 2>/dev/null"
     rv = `#{cmd}`
     JSON.parse (rv)
   end
 
-  def self.list_volumes
-    self.get_auth
-    cmd = "#{curlauth('GET', :storageendpoint)}/volumes 2>/dev/null"
+  def self.list_volumes loc
+    cmd = "#{curlauth('GET', loc, :storageendpoint)}/volumes 2>/dev/null"
     cvol = `#{cmd}`
     JSON.parse (cvol)
   end
 
-  def self.list_volume uuid
-    self.get_auth
-    cmd = "#{curlauth('GET', :storageendpoint)}/volumes/#{uuid} 2>/dev/null"
+  def self.list_volume uuid, loc
+    cmd = "#{curlauth('GET', loc, :storageendpoint)}/volumes/#{uuid} 2>/dev/null"
     cvol = `#{cmd}`
     JSON.parse (cvol)
   end
 
-  def self.create_volume name, image
-    self.get_auth
-    req = "{
-        \"volume\": {
-           \"display_name\": \"perf-#{name}\",
-           \"imageRef\": \"#{image}\", 
-           \"availability_zone\": null, 
-           \"volume_type\": \"SSD\", 
-           \"display_description\": null, 
-           \"snapshot_id\": null, 
-           \"size\": 50
-        }
-      }"
-    cmd = "#{curlauth('POST', :storageendpoint)}/volumes -d '#{req}'  2>/dev/null"
+  def self.fetch_volume id, loc
+    cmd = "#{curlauth('GET', loc, :storageendpoint)}/volumes/#{id} 2>/dev/null"
+    rv = `#{cmd}`
+    rv = JSON.parse(rv)    
+    rv
+  end
+
+  def self.create_volume name, image, loc
+    req = {
+      volume: {
+        display_name: "perf-#{name}",
+        imageRef: image, 
+        availability_zone: nil, 
+        volume_type: "SSD", 
+        display_description: nil, 
+        snapshot_id: nil, 
+        size: 50
+      }
+    }
+    cmd = "#{curlauth('POST', loc, :storageendpoint)}/volumes -d '#{req.to_json}'  2>/dev/null"
     cvol = `#{cmd}`
-    rv = JSON.parse (cvol)
-    uuid="#{rv['volume']['id']}"
-    while true
-      cvol = `#{curlauth('GET', :storageendpoint)}/volumes/#{uuid} 2>/dev/null`
-      begin 
-        rv = JSON.parse (cvol)  
-        if rv['volume'].nil?
-          puts "ignoring volume create message: cvol=#{cvol}" unless rv['itemNotFound']
-        elsif rv['volume']['status'] != 'creating'
-          break 
-        end
-      rescue Exception => e
-        puts "error parsing volume create status: cvol=#{cvol}"
-      end
+    rv = JSON.parse(cvol)
+    uuid = rv['volume']['id']
+    puts "uuid of new volume: #{uuid}"
+    nretry = 30
+    while nretry > 0
       sleep 10
+      r = fetch_volume uuid
+      if r['volume'].nil?
+        puts "ignoring volume create message: cvol=#{r}" unless r['itemNotFound']
+      elsif r['volume']['status'] == 'available'
+        break 
+      else
+        puts "#{uuid}: #{r['volume']['status']}" if @verbose > 0
+      end
+      nretry -= 1
     end
-    return uuid
+    return rv
   end
 
-  def self.delete_volume vol
-    self.get_auth
+  def self.delete_volume vol, loc
     name = vol['display_name'] || vol['id']
-    cmd = "#{curlauth('DELETE', :storageendpoint)}/volumes/#{vol['id']} 2>/dev/null"
+    cmd = "#{curlauth('DELETE', loc, :storageendpoint)}/volumes/#{vol['id']} 2>/dev/null"
     retrycnt = 20
     while retrycnt > 0
       rv = `#{cmd}`    
-      break if ! rv.start_with? '{"badRequest": {"message": "Invalid volume: Volume status must be available or error, but current status is: in-use", "code": 400}'
-      sleep 10
-      retrycnt -= 1
+      rv = JSON.parse rv
+      if rv['badRequest']
+        if rv['badRequest']['message'] == "Invalid volume: Volume status must be available or error, but current status is: in-use"
+          sleep 10
+          retrycnt -= 1
+        else
+          return nil
+        end
+      else
+        break
+      end
     end
     if retrycnt == 0
       return nil
@@ -286,37 +310,56 @@ class RackspaceDriver
     rv
   end
 
-  def self.create_server instance, uuid
-    self.get_auth
+  def self.list_servers loc
+    cmd = "#{curlauth('GET', loc, :serverendpoint)}/servers/detail 2>/dev/null"
+    rv = `#{cmd}`
+    JSON.parse(rv)
+  end
+
+
+  def self._create_server name, instance, loc, keyname=nil, image=nil, createvol=false
+    image = DEFIMAGE if image.nil?
     req = {
       server: {
         name: name, 
-        imageRef: "", 
-        block_device_mapping: [{
-                                 volume_id: uuid, 
-                                 delete_on_termination: '1', 
-                                 device_name: 'vda'
-                               }], 
+        imageRef: image, 
         flavorRef: instance, 
-        max_count: 1, 
-        min_count: 1, 
-        networks: [
-            { uuid: "00000000-0000-0000-0000-000000000000" }, 
-            { uuid: "11111111-1111-1111-1111-111111111111" }
-        ]
+        max_count: 1,     # xxx don't know what these do, and rs dox suck
+        min_count: 1,     # xxx
       }
     }
-    cmd = "#{curlauth('POST', :serverendpoint)}/servers -d '#{req.to_json} 2>/dev/null"
-    cvol = `#{cmd}`
-    rv = JSON.parse (cvol)
+    if createvol
+      req[:server][:imageRef] = nil
+      req[:server][:block_device_mapping_v2] = [{ delete_on_termination: true,
+                                                  boot_index: '0',
+                                                  destination_type: 'volume',
+                                                  uuid: image,
+                                                  source_type: 'image',
+                                                  volume_size: '50',
+                                                }]
+    end
+    req[:server][:key_name] = keyname unless keyname.blank?
+    networks = [
+                { uuid: "00000000-0000-0000-0000-000000000000" }, 
+                { uuid: "11111111-1111-1111-1111-111111111111" }
+               ]
+    req[:server][:networks] = networks
+    cmd = "#{curlauth('POST', loc, :serverendpoint)}/servers -d '#{req.to_json}' 2>/dev/null"
+    rv = `#{cmd}`
+    JSON.parse(rv)
   end
 
-  def self.log msg
-    File.write logfile, msg+"\n", mode: 'a'
+  def self.fetch_server id, loc
+    cmd = "#{curlauth('GET', loc, :serverendpoint)}/servers/#{id} 2>/dev/null"
+    rv = `#{cmd}`
+    rv = JSON.parse (rv)    
+    rv
   end
 
-  def self.logfile
-    "logs/rackspace.log"
+
+  def self._delete_server id, loc
+    cmd = "#{curlauth('DELETE', loc, :serverendpoint)}/servers/#{id} 2>/dev/null"
+    rv = `#{cmd}`
   end
 
 end

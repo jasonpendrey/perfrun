@@ -1,0 +1,71 @@
+#!/usr/bin/env ruby
+require 'webrick'
+require 'json'
+#
+# This is a very simple example of a listener to get 
+#
+class WebRun
+  def self.run
+    server = WEBrick::HTTPServer.new :Port => 1234
+    server.mount_proc "/" do |req, res|
+      WEBrick::HTTPAuth.basic_auth(req, res, '') do |user, password|
+        puts "u=#{user} p=#{password}"
+        user == 'foo' && password == 'bar'
+      end
+      case req.request_method.upcase
+      when 'GET'
+        get req, res
+      when 'POST'
+        create req, res
+      when 'PUT'
+        update req, res
+      when 'DELETE'
+        delete req, res
+      else
+        req.body = "illegal method"
+      end
+    end               
+    trap('INT') { server.stop }
+    server.start
+  end
+
+
+  def self.get req, res
+    res.body = req.inspect
+  end
+  
+  def self.create req, res
+    q = req.query
+    begin 
+      JSON.parse req.body
+    rescue Exception => e
+      res.body = "json data parse failed: #{e.message}\n"
+      return
+    end
+    file = Tempfile.new('spin')
+    file.write(req.body)
+    file.close
+    scriptln = "./spinup --verbose -c '#{file.path}' 2>&1"
+    puts "#{scriptln}"
+    rv = ''
+    IO.popen scriptln do |fd|
+      fd.each do |line|
+        puts line
+        STDOUT.flush
+        rv += line
+      end
+    end
+    file.unlink    # deletes the temp file
+  end
+  
+  def self.update req, res
+    res.body = req.inspect
+  end
+  
+  def self.delete req, res
+    res.body = req.inspect
+  end
+
+end
+
+WebRun.run

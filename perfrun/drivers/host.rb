@@ -1,13 +1,10 @@
-class HostDriver
+class HostDriver < Provider
 
   CHEF_PROVIDER = "host"
   MAXJOBS = 6
   LOGIN_AS = 'root'
 
-  def initialize 
-    @maxjobs = MAXJOBS
-  end
-
+  @verbose = 0
 
   # @override
   def self.get_active location, all, &block
@@ -38,7 +35,7 @@ class HostDriver
   end
 
   # @override
-  def self.delete_server name, id, location, diskuuid=nil
+  def self.delete_server name, id, location, flavor
     # nothing to do
     return 'true'
   end

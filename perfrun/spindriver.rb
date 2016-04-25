@@ -13,7 +13,7 @@ class SpinDriver
     @verbose = 0
   end
 
-  def run opts 
+  def run opts, &block
     @app_host = $apphost || APP_HOST
     @opts = opts
     @aborted = false
@@ -23,6 +23,8 @@ class SpinDriver
     @curprovider = object['provider']['name']
     @curlocation = object['provider']['location_flavor'] || object['provider']['address']
     @driver = ((object['provider']['cloud_driver'] || 'host').camelize+'Driver').constantize
+    @verbose = opts[:verbose] || 0
+    @driver.verbose = 1
     if @mode == 'run'
       @started_at = Time.now
     end
@@ -36,6 +38,7 @@ class SpinDriver
     begin
       active = {}
       alines = []
+      fetchedactive = false
       log "Spining up #{object['name']} objectives..." if @mode == 'run'
       object['compute_scopes'].each do |scope|
         break if @aborted
@@ -60,13 +63,14 @@ class SpinDriver
         end
         fullname = fullinstname scope, @curlocation
         log "Spining up #{fullname}..." if @mode == 'run'
-        active = {}
-        alines = []
-        get_active @curlocation, @mode != 'run' do |id, name, ip, state|
-          active[name] = name
-          alines.push({id:id, name:name, ip:ip, state: state})
+        if ! fetchedactive
+          get_active @curlocation, @mode != 'run' do |id, name, ip, state|
+            active[name] = name
+            alines.push({id:id, name:name, ip:ip, state: state})
+          end
+          active = active.values          
+          fetchedactive = true
         end
-        active = active.values          
         aline = nil
         alines.each do |a|
           next if a[:name] != fullname
@@ -74,10 +78,8 @@ class SpinDriver
           break
         end
         if @mode == 'run'
-          @pubkey = `ssh-keygen -y -f #{flavor['keyfile']}`
-          raise "can't access #{flavor['keyfile']}" if @pubkey.nil? or @pubkey.empty?
           if ! active.include? fullname or ! aline or ! aline[:ip]
-            next unless start_server fullname, scope, @curlocation
+            next unless start_server fullname, scope, @curlocation, block
           else
             log "#{fullname} already exists... skipping"
             next
@@ -92,10 +94,7 @@ class SpinDriver
           alines.each do |aline|
             if aline[:name] == fullname
               if @mode == 'delete'
-                cmd = delete_server(fullname, aline[:id], @curlocation)
-                @mutex.synchronize do 
-                  @pids.push({pid: spawn(cmd+'||true'), fullname: fullname, inst: fullname, loc: @curlocation, started_at: Time.now})
-                end
+                Thread.new { puts delete_server(fullname, aline[:id], @curlocation, flavor) }
               elsif @mode == 'list'
                 puts sprintf("#{@curlocation}\t%-20s\t#{aline[:id]}\t#{aline[:ip]}\t#{aline[:state]}", fullname)
               end
@@ -202,7 +201,7 @@ class SpinDriver
     @jobwait = 0
   end
 
-  def start_server fullname, scope, locflavor
+  def start_server fullname, scope, locflavor, block
     scopename = scope['details']
     flavor = scope['flavor']
     scope_id = scope['id']
@@ -221,15 +220,14 @@ class SpinDriver
           log "#{fullname} didn't start"
           @errorinsts.push "#(fullname} didn't start"
           delthread curthread        
-          return false
+          Thread.stop
         end
         cretime = Time.now-crestart
-        log "create output: #{out}\nend output" if @verbose > 0
         pass = nil
         create_ip = nil
         create_id = nil
-        diskuuid = nil
         error = nil
+        out.encode!('UTF-8', :invalid => :replace)
         out.split("\n").each do |line|
           if line.start_with? "Password: "
             pass = line.split(' ')[1]
@@ -240,9 +238,6 @@ class SpinDriver
           if line.start_with? "Floating IP Address:"
             create_ip = line.split(' ')[3]
           end
-          if line.start_with? "DISKUUID:"
-            diskuuid = line.split(' ')[1]
-          end
           if line.upcase.start_with? "ERROR:"
             error = line
           end
@@ -252,9 +247,9 @@ class SpinDriver
           log "#{fullname}: create output: #{out}"
           @errorinsts.push "#{fullname} (create returned error)"
           delthread curthread
-          return false
+          Thread.stop
         end
-        log "#{fullname}: password=#{pass.inspect}, createip: #{create_ip.inspect}, diskuuid: #{diskuuid.inspect}" if @verbose > 0
+        log "#{fullname}: password=#{pass.inspect}, createip: #{create_ip.inspect}" if @verbose > 0
         found = false
         id = ip = nil
         actives = get_active locflavor, false do |mid, mname, mip, mstate|      
@@ -272,10 +267,11 @@ class SpinDriver
           log "#{fullname}: active: #{actives.inspect}"
           @errorinsts.push fullname
           delthread curthread
-          return false
+          Thread.stop
         end
         log "Running created #{fullname} ip=#{ip} id=#{id}"
         ssh_remove_ip ip
+        block.call scope, fullname, id, ip if block
         delthread curthread
       rescue => e
         log "caught error starting server #{fullname}: #{e.message}" 
@@ -424,10 +420,9 @@ class SpinDriver
   def create_server name, flavor, location, provtags
     @driver.create_server name, flavor, location, provtags
   end
- 
 
-  def delete_server name, id, location, diskuuid=nil
-    @driver.delete_server name, id, location, diskuuid
+  def delete_server name, id, location, flavor
+    @driver.delete_server name, id, location, flavor
   end
 
   def get_active location, all, &block
@@ -439,7 +434,6 @@ class SpinDriver
       @driver.fullinstname scope, locflavor
     else
       scopename = scope['details'] || 'compute-'+scope['id']
-#      rv = scopename+'-'+(locflavor || 'no-location')
       rv = scopename
       rv.gsub(/[ \/]/, '-')
     end

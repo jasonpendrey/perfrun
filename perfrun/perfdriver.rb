@@ -20,9 +20,12 @@ class PerfDriver
     object = opts[:object]
     @tags = opts[:tags]
     @mode = opts[:mode]    
+    @verbose = opts[:verbose] || 0
     @curprovider = object['provider']['name']
     @curlocation = object['provider']['location_flavor'] || object['provider']['address']
     @driver = ((object['provider']['cloud_driver'] || 'host').camelize+'Driver').constantize
+    # no driver verbose mode in perfrun mode... too noisy 
+    @driver.verbose = 0
     if @mode == 'run'
       @started_at = Time.now
     end
@@ -37,6 +40,7 @@ class PerfDriver
     begin
       active = {}
       alines = []
+      fetchedactive = false
       object['compute_scopes'].each do |scope|
         break if @aborted
         flavor = scope['flavor']
@@ -60,13 +64,14 @@ class PerfDriver
         end
         fullname = fullinstname scope, @curlocation
         log "Running #{fullname}..." if @mode == 'run'
-        active = {}
-        alines = []
-        get_active @curlocation, @mode != 'run' do |id, name, ip, state|
-          active[name] = name
-          alines.push({id:id, name:name, ip:ip, state: state})
+        if ! fetchedactive
+          get_active @curlocation, @mode != 'run' do |id, name, ip, state|
+            active[name] = name
+            alines.push({id:id, name:name, ip:ip, state: state})
+          end
+          active = active.values
+          fetchedactive = true
         end
-        active = active.values          
         aline = nil
         alines.each do |a|
           next if a[:name] != fullname
@@ -82,7 +87,7 @@ class PerfDriver
             ssh_remove_ip aline[:ip]
             cmd = "(echo 'logging into #{fullname}...' && ./RunRemote  -O '#{scope['id']}' -I '#{scope['details']}' -i '#{flavor['keyfile']}' -H '#{@app_host}' -K #{APP_KEY} -S #{APP_SECRET} #{flavor['login_as']}@#{aline[:ip]}) >> #{logfile} 2>&1"
             @mutex.synchronize do
-              @pids.push({pid: spawn(cmd), fullname: fullname,  inst: scope['details'], loc: @curlocation, started_at: Time.now})
+              @pids.push({pid: spawn(cmd), fullname: fullname,  inst: scope['details'], loc: @curlocation, started_at: Time.now, flavor: flavor})
             end
           end
           if @threads.length >= @maxjobs
@@ -95,10 +100,7 @@ class PerfDriver
           alines.each do |aline|
             if aline[:name] == fullname
               if @mode == 'delete'
-                cmd = delete_server(fullname, aline[:id], @curlocation)
-                @mutex.synchronize do 
-                  @pids.push({pid: spawn(cmd+'||true'), fullname: fullname, inst: fullname, loc: @curlocation, started_at: Time.now})
-                end
+                Thread.new { puts delete_server(fullname, aline[:id], @curlocation, flavor) }
               elsif @mode == 'list'
                 puts sprintf("#{@curlocation}\t%-20s\t#{aline[:id]}\t#{aline[:state]}", fullname)
               end
@@ -191,11 +193,17 @@ class PerfDriver
           rescue Errno::ECHILD
             log "deleting #{pid.inspect}" if @verbose > 0
             @pids.delete_at idx
+            if pid[:id]
+              Thread.new { delete_server(pid[:fullname], pid[:id], pid[:loc], pid[:flavor]) }
+            end
             next
           end
           if pid[:timedout]
             log "deleting #{pid.inspect} even though it is timed out"
             @pids.delete_at idx
+            if pid[:id]
+              Thread.new { delete_server(pid[:fullname], pid[:id], pid[:loc], pid[:flavor]) }
+            end
           end
         end
       end
@@ -224,15 +232,15 @@ class PerfDriver
           log "#{fullname} didn't start"
           @errorinsts.push "#(fullname} didn't start"
           delthread curthread        
-          return false
+          Thread.stop
         end
         cretime = Time.now-crestart
         log "create output: #{out}\nend output" if @verbose > 0
         pass = nil
         create_ip = nil
         create_id = nil
-        diskuuid = nil
         error = nil
+        out.encode!('UTF-8', :invalid => :replace)
         out.split("\n").each do |line|
           if line.start_with? "Password: "
             pass = line.split(' ')[1]
@@ -243,9 +251,6 @@ class PerfDriver
           if line.start_with? "Floating IP Address:"
             create_ip = line.split(' ')[3]
           end
-          if line.start_with? "DISKUUID:"
-            diskuuid = line.split(' ')[1]
-          end
           if line.upcase.start_with? "ERROR:"
             error = line
           end
@@ -255,9 +260,9 @@ class PerfDriver
           log "#{fullname}: create output: #{out}"
           @errorinsts.push "#{fullname} (create returned error)"
           delthread curthread
-          return false
+          Thread.stop
         end
-        log "#{fullname}: password=#{pass.inspect}, createip: #{create_ip.inspect}, diskuuid: #{diskuuid.inspect}" if @verbose > 0
+        log "#{fullname}: password=#{pass.inspect}, createip: #{create_ip.inspect}" if @verbose > 0
         found = false
         id = ip = nil
         actives = get_active locflavor, false do |mid, mname, mip, mstate|      
@@ -275,7 +280,7 @@ class PerfDriver
           log "#{fullname}: active: #{actives.inspect}"
           @errorinsts.push fullname
           delthread curthread
-          return false
+          Thread.stop
         end
         log "Running created #{fullname} ip=#{ip} id=#{id}"
         ssh_remove_ip ip
@@ -283,21 +288,21 @@ class PerfDriver
           ntry = 0
           while ntry < 5
             break if system ("sshpass -p #{pass} ssh #{SSHOPTS} #{flavor['login_as']}@#{ip} 'mkdir -p .ssh; chmod 0700 .ssh; echo \"#{@pubkey}\" >> .ssh/authorized_keys'")
-            log "retry #{ntry} insert pubkey to authkeys..."
             ntry += 1
+            log "retry #{ntry} insert pubkey to authkeys..."
             sleep 5
           end
           if ntry >= 5
             log "can't insert public key into #{fullname}"
             @errorinsts.push "#(fullname} (can't insert public key)"
             delthread curthread
-            return false
+            Thread.stop
           end
         end
-        cmd = "(./RunRemote -I '#{scopename}' -O '#{scope_id}' -i '#{flavor['keyfile']}' -H '#{@app_host}' -K #{APP_KEY} -S #{APP_SECRET} --create-time #{cretime} #{flavor['login_as']}@#{ip} && " +(delete_server(fullname, id, locflavor, diskuuid))+ ")  >> #{logfile} 2>&1"
+        cmd = "(./RunRemote -I '#{scopename}' -O '#{scope_id}' -i '#{flavor['keyfile']}' -H '#{@app_host}' -K #{APP_KEY} -S #{APP_SECRET} --create-time #{cretime} #{flavor['login_as']}@#{ip})  >> #{logfile} 2>&1"
         log "cmd=#{cmd}" if @verbose > 0
         @mutex.synchronize do 
-          @pids.push({pid: spawn(cmd), fullname: fullname, inst: scopename, loc: locflavor, started_at: Time.now})
+          @pids.push({pid: spawn(cmd), fullname: fullname, id: id, inst: scopename, loc: locflavor, started_at: Time.now, flavor: flavor})
         end
         delthread curthread
       rescue => e
@@ -383,6 +388,9 @@ class PerfDriver
                   log "WATCHDOG-#{Process.pid}: killing #{pid[:fullname]}/#{pid[:pid]} because #{((now-pid[:started_at])/60).round} minutes have elapsed"
                   @errorinsts.push "#{pid[:fullname]} (timed out)"
                   @pids.delete_at idx
+                  if pid[:id]
+                    Thread.new { delete_server(pid[:fullname], pid[:id], pid[:loc], pid[:flavor]) }
+                  end
                   pid[:timedout] = true
                 rescue 
                 end
@@ -449,8 +457,8 @@ class PerfDriver
   end
  
 
-  def delete_server name, id, location, diskuuid=nil
-    @driver.delete_server name, id, location, diskuuid
+  def delete_server name, id, location, flavor
+    @driver.delete_server name, id, location, flavor
   end
 
   def get_active location, all, &block

@@ -1,7 +1,6 @@
 #!/usr/bin/env ruby
 require 'optparse'
 require './perfdriver'
-require './drivers/rackspace'
 
 class PerfRun
   TESTTIME = 12*60*60
@@ -26,7 +25,11 @@ class PerfRun
       next if obj['compute_scopes'].length == 0
       if ARGV.length > 0
         prov = obj['provider']['cloud_driver']
-        next if ! ARGV.include? prov
+        loc = obj['provider']['location_flavor']
+        next if ARGV[0] != prov
+        if ARGV.length > 1
+          next if ARGV[1] != loc 
+        end
       end
       runone obj
     end
@@ -163,15 +166,6 @@ class PerfRun
         }
         o.on('--period N') { |b|
           @period = Integer b
-        }
-        # this is really a miserable hack, but c'est la vie
-        o.on('--delete-rackspace-disk DISKSPEC') { |b|
-          spec = b.split ':'
-          uuid = spec[0]
-          loc = spec [1]
-          RackspaceDriver.location =  loc
-          RackspaceDriver.delete_volume({'id' => uuid})
-          exit 0
         }
       end.parse!
     end

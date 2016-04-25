@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 require 'optparse'
-require './spindriver'
-require './drivers/rackspace'
+require_relative 'drivers/provider'
+require_relative 'spindriver'
 
 class Spinup
   CONFIG = "config/spinup.json"
@@ -41,11 +41,15 @@ class Spinup
       curthread[:thread] = Thread.new {    
         curthread[:thread] = Thread.current
         curthread[:pd] = pd = SpinDriver.new
-        pd.verbose = @verbose
-        pd.run opts
+        pd.run opts do |scope, fullname, id, ip|
+          # XXX need to rationalize this to call an external hook
+          puts "#{id}: #{fullname} #{ip}"
+          puts RackspaceDriver.del_dns "burstorm.com", fullname
+          puts RackspaceDriver.add_dns "burstorm.com", fullname, ip
+        end
         delthread curthread
       }
-      @mutex.synchronize do 
+      @mutex.synchronize do
         @threads.push curthread unless curthread[:dead]
       end
     else
@@ -66,7 +70,7 @@ class Spinup
         o.on('--delete') { |b|
           @mode = 'delete'
         }
-        o.on('--list') { |b|
+        o.on('--list', '-l') { |b|
           @mode = 'list'
         }
         o.on('--verbose', '-v') { |b|
@@ -75,7 +79,7 @@ class Spinup
         o.on('--dryrun') { |b|
           @dryrun = true
         }
-        o.on('--config CONFIG') { |b|
+        o.on('--config CONFIG','-c CONFIG') { |b|
           @config = b
         }
         o.on('--knifelist') { |b|
@@ -84,24 +88,30 @@ class Spinup
         o.on('--debug') { |b|
           @debug = true
         }
+        o.on('-h','--help') { |b|
+          puts o
+          exit 0
+        }
       end.parse!
     end
 
     start = Time.now
-    if @debug
-    end      
     $LOAD_PATH.push "#{Dir.pwd}/config"
     begin
       load CRED_CONFIG
     rescue
     end
-    begin
-      @project = JSON.parse File.read(@config)
+    begin      
+      if File.exist? @config
+        @project = JSON.parse File.read(@config)
+      else
+        @project = JSON.parse File.read('config/'+@config)
+      end
     rescue Exception => e
-      puts "JSON parse error: #{e.message} #{e.backtrace.join('\n')}"
+      puts @config
+      puts "config load error: #{e.message} #{e.backtrace.join('\n')}"
       exit 1
     end
-    nstart = 0
     case @project['ptype']
     when 'contract'
       @objs = @project['contracts']
@@ -118,8 +128,6 @@ class Spinup
         exit 1
       end
     end
-    # XXX for host driver
-    $objs = @objs
     @tags = @project['project_tags']
     oneoffrun
     puts "<b>Spinup finished after #{((Time.now-start)/60).round(1)} minutes</b>"

@@ -1,4 +1,6 @@
-class DigitalOceanDriver
+require 'fog'
+
+class DigitalOceanDriver < Provider
 
   PROVIDER='Digital Ocean'
   CHEF_PROVIDER='digital_ocean'
@@ -6,38 +8,23 @@ class DigitalOceanDriver
   PROVIDER_ID = 110
   LOGIN_AS = 'root'
 
+  @verbose = 0
+  @keypath = "config"
+
   def self.get_active location, all, &block
-    servers = `bundle exec knife #{CHEF_PROVIDER} droplet list`
-    srv = servers.split "\n"
-    srv.shift      
-    srv.each do |s|
-      # Note: this is sort of a big greasy hack to use 2 spaces to split so that the region strings don't screw stuff up
-      line = s.split '  '
-      nline = []
-      line.each do |l|
-        nline.push l if ! l.strip.empty?
-      end
-      line = nline
-      id = line[0].strip
-      name = line[1].strip
-      state = line.last.strip
-      ip = line[4].strip
-      if state == 'active' or all
-        yield id, name, ip, state
+    s = get_auth location
+    servers = s.servers.each do |server|
+      if server.status == 'active' or all      
+        yield server.id, server.name, server.public_ip_address, server.status
       end
     end
   end	     
 
-  def self.create_server name, flavor, location, provtags
-    roles = []
-    provtags.each do |tag|
-      roles.push 'role['+tag+']'
-    end
-    roles = roles.join ','
+  def self.create_server name, flavor, loc, provtags
     image = flavor['imageid']
-    image = get_image(location) if image.blank?
+    image = get_image(loc) if image.blank?
     if image.blank?
-      puts "can't find image for location #{location}"
+      puts "can't find image for location #{loc}"
       return nil
     end
     if flavor['keyname'].blank?
@@ -56,31 +43,67 @@ class DigitalOceanDriver
       puts "must specify keyfile"
       return nil
     end
-    scriptln = "yes|bundle exec knife #{CHEF_PROVIDER} droplet create --server-name '#{name}' --image '#{image}' --location '#{location}' --size '#{flavor['flavor']}'  --bootstrap --ssh-keys '#{flavor['keyname']}' -i '#{flavor['keyfile']}' -x '#{flavor['login_as']}' --run-list \"#{roles}\" #{flavor['additional']} 2>&1"
-    puts "#{scriptln}"    
-    rv = ''
-    IO.popen scriptln do |fd|
-      fd.each do |line|
-        puts line
-        STDOUT.flush
-        rv += line
+    server = self._create_server name, flavor['flavor'], loc, flavor['keyname'], image, false
+    if server.nil?
+      puts "can't create #{name}: #{server}"
+      return nil
+    end
+    id = server.id
+    server.wait_for { 
+      server.ready? 
+    }
+    ip = server.public_ip_address
+    rv = ""
+    if flavor['provisioning'] == 'chef'
+      sleep 1
+      begin
+        rv += ChefDriver.chef_bootstrap ip, name, provtags, flavor, loc, nil, config(loc) 
+      rescue Exception => e
+        puts "e=#{e.message}"
       end
     end
     rv
   end
 
-  def self.delete_server s, id, location, diskuuid=nil
-    "yes|bundle exec knife #{CHEF_PROVIDER} droplet destroy -S #{id}"
+  def self.get_auth loc
+    return @auth if @auth
+    keys = get_keys loc
+    @auth = Fog::Compute.new(:provider => 'DigitalOcean', :digitalocean_token => keys[:apiKey], :version => 'V2')
   end
 
-  def self.get_image location
+  # XXX there's probably a better way to read knife.rb...
+  def self.get_keys loc
+    akey = "knife[:digital_ocean_access_token]"
+    rv = {}
+    File.open(self.config loc).each do |line|
+      # kill comments
+      idx = line.index '#'
+      unless idx.nil?
+        line = line[0..idx-1]
+      end
+      if line.start_with? akey
+        l = line.split '='
+        rv[:apiKey] = l[1].strip[1..-2]
+      end
+    end
+    rv
+  end
+
+  def self._create_server name, instance, loc, keyname, image, createvol=false
+    s = get_auth loc
+    server = s.servers.create(:name => name, :image => image, :size => instance, :region  => loc, ssh_keys: [keyname])
+    server
+  end
+
+  def self.get_image loc
     if @ubuntuimage and @fetchtime+3600 > Time.now
       return @ubuntuimage 
     end
     @fetchtime = Time.now
-    `bundle exec knife #{CHEF_PROVIDER} image list -P`.split("\n").each do |line|
-      next unless line.include? 'ubuntu-14-04-x64'
-      return @ubuntuimage = line.split(" ")[0]      
+    s = get_auth loc
+    s.images.each do |img|
+      next unless img.slug == 'ubuntu-14-04-x64'
+      return @ubuntuimage = img.slug
     end
     return nil
   end

@@ -1,12 +1,14 @@
 source 'https://rubygems.org'
 gem 'activesupport'
+gem 'google-api-client'
 gem 'fog' #, '>= 1.25.0', :github => 'fog/fog'
-gem 'knife-google', '>= 1.3.2', :github => 'chef/knife-google'
-#gem 'knife-hp', :github => 'burstorm/knife-hp', :branch => :master
-#gem 'knife-hp', :github => 'hp/knife-hp', :branch => :master
-gem 'knife-linode'
-gem 'knife-rackspace', :github => 'burstorm/knife-rackspace', :branch => :master
-gem 'knife-ec2'
-gem 'knife-softlayer', :github => 'softlayer/knife-softlayer', :branch => :master
-gem 'knife-azure', :github => 'chef/knife-azure', :branch => :master
-gem 'knife-digital_ocean'
+gem 'fog-azure'
+gem 'fog-google'
+#gem 'knife-google'#, '>= 1.3.2', :github => 'chef/knife-google'
+#gem 'knife-linode'
+#gem 'knife-rackspace', :github => 'burstorm/knife-rackspace', :branch => :master
+#gem 'knife-ec2'
+#gem 'knife-softlayer', :github => 'softlayer/knife-softlayer', :branch => :master
+#gem 'knife-azure', :github => 'chef/knife-azure', :branch => :master
+#gem 'knife-digital_ocean'
+gem 'webrick'
