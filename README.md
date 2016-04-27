@@ -10,40 +10,42 @@ $ bundle install
 
 this will install all of the ruby dependencies needed by perfrun. 
 
-Next up, we need to configure the perfrun software to:
+Next up, you need to configure the perfrun software to:
 
 1. describe the servers you'd like to test
 2. get the credentials to write the test results back to the Burstorm server
 
-To create the configuration, start by logging into your Burstorm app account (https://app.burstorm.com) to set up a blueprint of the servers you want to benchmark. 
-Creating a blueprint in the Burstorm app allows you to create a perfrun configuration file which tells the perfrun software
-about your servers, keys, etc. So much easier than editing a json config blob by hand.
+To create the configuration, start by logging into your Burstorm app account (https://app.burstorm.com) to set up a blueprint of the servers you want to benchmark. Creating a blueprint in the Burstorm app allows you to create a perfrun configuration file which tells the perfrun software about your servers, keys, etc. So much easier than editing a json config blob by hand.
 
 1. Start by creating a blueprint, and a contract to model your infrastructure under test. You can then drag a linux objective onto the contract to describe the server(s) that you will be testing. In this example, our server is a 1 core, 1 GB ram, 5 GB storage Linux instance.  ![Alt text](/doc/images/perfrun.5.png?raw=true "contract with one objective")
 
-2. We then need to tell the Burstorm app about the particulars of the server we want to test. With the objective
-we created in step (1), we can click the advanced button, which exposes the run spec field. Click on the
+2. You then need to tell the Burstorm app about the particulars of the server you want to test. With the objective
+you created in step (1), you can click the advanced button, which exposes the run spec field. Click on the
 Run Spec field and the Run Spec editor will appear: ![Alt text](/doc/images/perfrun.1.png?raw=true "click on run spec") 
 
-3. Enter the dns name of the server, and the name of the SSH key file that will be used to log in to the server.  **NOTE**: Burstorm does NOT upload your server keys EVER. This is just a path to the server keys that will be
+3. Enter the dns name of the server, and the name of the SSH key file that will be used to log in to the server. 
+   
+   **NOTE**: Burstorm does NOT upload your server keys EVER. This is just a path to the server keys that will be
 added later. ![Alt text](/doc/images/perfrun.2.png?raw=true "edit run spec")
 
 4. Once you've entered your Run Spec information, apply the change, and save the server in the app: ![Alt text](/doc/images/perfrun.3.png?raw=true "save objective")
 
-5. We're now ready to export the perfrun configuration file. Click on the Perfrun Script item in the Save-As pulldown, and the configuration will be downloaded to your computer. ![Alt text](/doc/images/perfrun.4.png?raw=true "save-as perfrun")
+5. You're now ready to export the perfrun configuration file. Click on the JSON API item in the Save-As pulldown, and the configuration will be downloaded to your computer. ![Alt text](/doc/images/perfrun.4.png?raw=true "save-as JSON API")
 
 6. The last step is to generate a Burstorm API key and secret. This allows you to save perfruns to the Burstorm servers under your login name, and keeps them private. ![Alt text](/doc/images/perfrun.6.png?raw=true "create API keys")
 
-Ok, now we've done all of the configuration work we need to do with the Burstorm App. We have 3 more steps to go.
+Ok, now you've done all of the configuration work you need to do with the Burstorm App. You have 3 more steps to go.
 
-1. take the config file (perfrun.config) we created above and place it into the perfrun/perfrun/config directory.
-2. take the API key and API secret and place them in a file called credentials.config. There is a credentials.config.example file in this directory to show the credential file format.
-3. copy the SSH keys to log into your server into the perfrun/perfrun/config directory. this MUST be the private key. as we said, we don't upload these, it's just so that perfrun can log into your servers to run performance tests.
+1. take the config file (perfrun.json) you downloaded above and place it into the perfrun/perfrun/config directory.
+2. take the API key and API secret and place them in a file called config/credentials.config. There is a credentials.config.example file in this directory to show the credential file format.
+3. copy your server's SSH key (to allow perfrun to login to your servers) into the perfrun/perfrun/config directory. This MUST be the private key (eg id_rsa, not id_rsa.pub). As we said, we don't upload these, it's just so that perfrun can log into your servers to run performance tests.
 
-We're now ready to try a performance test run:
+You're now ready to start the performance test run:
 
-1. ./perfrun --verbose
+1. $ ./perfrun --verbose
 2. in another window, you can view the log by running  $ tail -f logs/host.log
+
+This will take a while... approximately 15 minutes or so. Get cup of coffee.
 
 Once it completes, you can go back into the Burstorm App to view the results. In this case, we're looking at a Burstorm perfrun of some of our developer machines:
 
@@ -53,13 +55,13 @@ Within the Burstorm application, you'll be able to view the data sets from your 
 
 ## Setting up Perfrun for Cloud Providers
 
-[ THIS IS ALL VERY TENTATIVE. /mat]
+[ THIS IS STILL ALL VERY TENTATIVE. /mat]
 
- Burstorm already does perfruns on a weekly basis for many cloud providers, but if you'd like to spin up, benchmark and reap cloud instances for the drivers we support (aws, rackspace, linode, azure, softlayer, google and digital ocean), you can do that as well. First off, you must provide your credentials to access the cloud providers you want to benchmark. The file config/knife.examples.rb shows the place to put the information credentials that perfrun uses. Perfrun uses Chef/knife to actually manage the instance (create, list, delete) so you can google for knife PROVIDER to find out how to obtain your provider's API credentails (if you don't have them already), and what the format within knife.rb should be. Additionally, you will need credentials to login to the Opscode.com chef server (or your own chef server if that's what you want). This is also in knife.rb
+ Burstorm already does perfruns on a weekly basis for many cloud providers, but if you'd like to spin up, benchmark and reap cloud instances for the drivers we support (aws, rackspace, linode, azure, softlayer, google and digital ocean), you can do that as well. First off, you must provide your credentials to access the cloud providers you want to benchmark. The file config/knife.examples.rb shows the place to put the information credentials that perfrun uses. Perfrun no longer has dependencies on Chef/Knife but the knife.rb key configuration file is still being used. You can google for you provider to find out how to obtain your provider's API credentails (if you don't have them already), and what their format within knife.rb should be. 
  
- Once you've set up knife.rb, you need to create a blueprint to model the cloud instances you'd like to benchmark. Instead of supplying the host's name in the Run Spec, choose "Run Spec is for a Cloud Provider". Now choose the provider and an instance you'd like to benchmark. Leave the OS image name alone (XXX, still needs to be rationalized /mat). Edit the server SSH key if applicable for the cloud provider (some providers return passwords, which perfrun captures), and the default login name (typically ubuntu for Ubuntu disto images). Click "apply", save the objective, save-as a "perfrun script" and copy the perfrun.config to your server with the perfrun repo as you did above. Run perfrun as usual, and it should fire up yours instances, run the benchmark, and reap them!
+ Once you've set up knife.rb, you need to create a blueprint to model the cloud instances you'd like to benchmark. Instead of supplying the host's name in the Run Spec, choose "Run Spec is for a Cloud Provider". Now choose the provider and an instance you'd like to benchmark. Leave the OS image name alone (XXX, still needs to be rationalized /mat). Edit the server SSH key if applicable for the cloud provider (some providers return passwords, which perfrun captures), and the default login name (typically ubuntu for Ubuntu disto images). Click "apply", save the objective, save-as a "perfrun script" and copy the perfrun.config to your server with the perfrun repo as you did above. Run perfrun as usual, and it should fire up yours instances, run the benchmark, and reap them! Let us know if you get this to work... it's still pretty green.
 
-## What we Upload
+## What Burstorm Uploads in a Perfrun
 
 The Burstorm perfrun server uses a slightly modified version of the venerable UnixBench. The modifications are mainly to add a JSON formatted output (in addition to UnixBench's HTML and plain text output), and to upload the JSON blob to the Burstorm servers. In the JSON blob the app takes a single new field, an objective id, which tells the Burstorm app which contract the perfrun being uploaded is associated with.
 
