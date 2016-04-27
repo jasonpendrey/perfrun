@@ -5,21 +5,20 @@ class GoogleDriver < Provider
   MAXJOBS = 1
   PROVIDER_ID = 920  
   LOGIN_AS = 'ubuntu'
-  DEFIMAGE='ubuntu-1410-utopic-v20150318c'
-
+  DEFIMAGE='ubuntu-1404-trusty-v20160406'
   @verbose = 0
   @keypath = "config"
 
   def self.get_active location, all, &block
     s = get_auth location
     s.servers.each do |server|
-      if server.state == 'running' or all      
-        yield server.id, server.tags['Name'], server.public_ip_address, server.state
+      if server.state == 'RUNNING' or all      
+        yield server.id, server.name, server.public_ip_address, server.state
       end
     end
   end	     
 
-  def self.create_server name, flavor, loc, provtags
+  def self.create_server name, scope, flavor, loc, provtags
     if flavor['flavor'].blank?
       puts "must specify flavor"
       return nil
@@ -34,56 +33,20 @@ class GoogleDriver < Provider
     end
     image = flavor['imageid']
     image = DEFIMAGE if image.blank?
-    server = self._create_server name, flavor, loc, image
+    server = self._create_server name, scope, flavor, loc, image
     if server.nil?
       puts "can't create #{name}: #{server}"
       return nil
     end
-    puts "server=#{server.inspect}"
-    id = server.id
+    rv = {}
     server.wait_for { 
       server.ready? 
     }
-    ip = server.public_ip_address
-    rv = ""
+    rv[:id] = server.id
+    rv[:ip] = server.public_ip_address
     if flavor['provisioning'] == 'chef'
       sleep 1
-      rv += ChefDriver.chef_bootstrap ip, name, provtags, flavor, loc, nil, config(loc) 
-    end
-    rv
-  end
-
-  def self.create_server_old name, flavor, location, provtags
-    roles = []
-    provtags.each do |tag|
-      roles.push 'role['+tag+']'
-    end
-    roles = roles.join ','
-    if flavor['flavor'].blank?
-      puts "must specify flavor"
-      return nil
-    end
-    if flavor['login_as'].blank?
-      puts "must specify login_as"
-      return nil
-    end
-    if flavor['keyfile'].blank?
-      puts "must specify keyfile"
-      return nil
-    end
-    image = flavor['imageid']
-    image = 'ubuntu-1410-utopic-v20150318c' if image.blank?
-    rv = `yes|bundle exec knife #{CHEF_PROVIDER} disk delete #{name} -Z #{location} 2>&1`
-    sleep 60 if ! rv.start_with? 'ERROR:'
-    scriptln = "yes|bundle exec knife #{CHEF_PROVIDER} server create '#{name}' -r '#{roles}' -N '#{name}' -I '#{image}' -m '#{flavor['flavor']}' -V -Z '#{location}' -x '#{flavor['login_as']}' -i '#{flavor['keyfile']}' #{flavor['additional']} 2>&1"
-    puts "#{scriptln}" if @verbose > 0
-    rv = ''
-    IO.popen scriptln do |fd|
-      fd.each do |line|
-        puts line if @verbose > 0
-        STDOUT.flush
-        rv += line
-      end
+      rv[:provisioning_out] = ChefDriver.bootstrap ip, name, provtags, flavor, loc, nil, config(loc) 
     end
     rv
   end
@@ -117,14 +80,16 @@ class GoogleDriver < Provider
     rv
   end
 
-  def self._create_server name, flavor, loc, image
+  def self._create_server name, scope, flavor, loc, image
     s = get_auth loc
-    disk = s.disks.create(:name => name, :size_gb => 10, :zone_name => loc, :source_image => image)
-    puts disk.inspect
+    storage = scope['storage'] || 20
+    storage = 20 if storage < 20
+    if ! (disk = fetch_disk(name, loc))
+      disk = s.disks.create(:name => name, :size_gb => storage, :zone_name => loc, :source_image => image)
+    end
     disk.wait_for { disk.ready? }
-    puts "disk ready."
     pubkey = `ssh-keygen -y -f #{flavor['keyfile']}`
-    f = Tempfile.new
+    f = Tempfile.new 'goog'
     f.write(pubkey)
     f.close
     server = s.servers.create(
@@ -134,11 +99,63 @@ class GoogleDriver < Provider
                               :private_key_path => flavor['keyfile'],
                               :public_key_path => f.path,
                               :zone_name => loc,
-                              #                      :user => ENV["USER"],
-                              :tags => [],
-                              #                      :service_accounts => %w(sql-admin bigquery https://www.googleapis.com/auth/compute)
+                              :user => flavor['login_as'],
+                              :tags => []
                       )
     server
   end
+
+
+  # @override: google does .get as name rather than id... grr
+  def self.fetch_server name, loc
+    s = get_auth loc
+    s.servers.get name
+  end
+
+  def self.fetch_disk name, loc
+    s = get_auth loc
+    s.disks.get name
+  end
+
+  def self.delete_server name, id, loc, flavor
+    self._delete_server id, name, loc
+    if flavor['provisioning'] == 'chef'
+      ChefDriver.delete_node(name) 
+    end
+    nil
+  end
+
+  def self._delete_server id, name, loc
+    begin
+      server = self.fetch_server name, loc
+      if server
+        server.destroy 
+      else
+        puts "can't find server..."        
+      end
+      while s = self.fetch_server(name, loc)
+        break if s.state == 'TERMINATED'
+        sleep 1
+        puts "s=#{s.state}"
+      end
+      while disk = self.fetch_disk(name, loc)
+        sleep 1
+        next if disk.status == 'FAILED'
+        begin
+          disk.destroy 
+        rescue Exception => e
+          # gross, but the exception is just a generic fog error...
+          # XXX maybe there is a way to determine if it's inuse otherwise...
+          next if e.message.include? "is already being used by"
+          puts "e=#{e.message} #{e} #{e.class}"
+        end
+        break
+      end
+    rescue Exception => e
+      puts "e=#{e.message}"
+      puts e.backtrace.join "\n"
+    end
+  end
+
 
 end

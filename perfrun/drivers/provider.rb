@@ -10,7 +10,7 @@ class Provider
   def self.delete_server name, id, loc, flavor
     self._delete_server id, loc
     if flavor['provisioning'] == 'chef'
-      ChefDriver.chef_delete_node(name) 
+      ChefDriver.delete_node(name) 
     end
     nil
   end
@@ -43,8 +43,10 @@ class Provider
         else
           server.delete
         end
+      end
     rescue Exception => e
       puts "e=#{e.message}"
+      puts e.backtrace.join "\n"
     end
   end
 

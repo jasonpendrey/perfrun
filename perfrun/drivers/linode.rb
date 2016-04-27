@@ -23,7 +23,7 @@ class LinodeDriver < Provider
   end	     
 
 
-  def self.create_server name, flavor, loc, provtags
+  def self.create_server name, scope, flavor, loc, provtags
     image = flavor['imageid']
     image = DEFIMAGE if image.blank?
     if flavor['flavor'].blank?
@@ -35,20 +35,21 @@ class LinodeDriver < Provider
       return nil
     end
     pass = gen_pass
+    rv = {}
     server= self._create_server name, flavor['flavor'], loc, pass, image, false
     if server.nil?
       puts "can't create #{name}: #{server}"
       return nil
     end
-    id = server.id
     server.wait_for { 
       server.ready? 
     }
-    ip = server.public_ip_address
-    rv = "Password: #{pass}\n"
+    rv[:pass] = pass
+    rv[:id] = server.id
+    rv[:ip] = server.public_ip_address
     if flavor['provisioning'] == 'chef'
       sleep 1
-      rv += ChefDriver.chef_bootstrap ip, name, provtags, flavor, loc, pass, config(loc) 
+      rv [:provisioning_out] = ChefDriver.bootstrap rv[:ip], name, provtags, flavor, loc, pass, config(loc) 
     end
     rv
   end

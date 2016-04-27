@@ -29,7 +29,7 @@ class HostDriver < Provider
     rv.gsub(/[ \/]/, '-')
   end
 
-  def self.create_server name, flavor, location, provtags
+  def self.create_server name, scope, flavor, location, provtags
     # nothing to do
     return 'true'
   end

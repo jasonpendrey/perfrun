@@ -94,7 +94,7 @@ class SpinDriver
           alines.each do |aline|
             if aline[:name] == fullname
               if @mode == 'delete'
-                Thread.new { puts delete_server(fullname, aline[:id], @curlocation, flavor) }
+                puts delete_server(fullname, aline[:id], @curlocation, flavor)
               elsif @mode == 'list'
                 puts sprintf("#{@curlocation}\t%-20s\t#{aline[:id]}\t#{aline[:ip]}\t#{aline[:state]}", fullname)
               end
@@ -207,7 +207,6 @@ class SpinDriver
     scope_id = scope['id']
     log "creating #{fullname}..."
     crestart = Time.now
-    out = nil
     curthread = {started_at:Time.now, fullname: fullname, inst: scopename, loc: locflavor}
     curthread[:thread] = Thread.new {
       begin
@@ -215,63 +214,17 @@ class SpinDriver
         log "#{fullname}: waiting #{@jobwait*1}" if @jobwait > 0
         sleep @jobwait * 1
         @jobwait += 1
-        out = create_server(fullname, flavor, locflavor, provisioning_tags(scope))
-        if out.nil?
+        server = create_server(fullname, scope, flavor, locflavor, provisioning_tags(scope))
+        if server.nil?
           log "#{fullname} didn't start"
           @errorinsts.push "#(fullname} didn't start"
-          delthread curthread        
-          Thread.stop
+        else
+          cretime = (Time.now-crestart)
+          log "Created #{fullname} ip=#{server[:ip]} id=#{server[:id]} in #{cretime.round} seconds"
+          # XXX should I remove the ip from known_hosts here too?? /mat
+          ssh_remove_ip server[:ip]
+          block.call scope, fullname, server[:id], server[:ip] if block
         end
-        cretime = Time.now-crestart
-        pass = nil
-        create_ip = nil
-        create_id = nil
-        error = nil
-        out.encode!('UTF-8', :invalid => :replace)
-        out.split("\n").each do |line|
-          if line.start_with? "Password: "
-            pass = line.split(' ')[1]
-          end
-          if line.start_with? "Connecting to "
-            create_ip = line.split(' ')[2]
-          end
-          if line.start_with? "Floating IP Address:"
-            create_ip = line.split(' ')[3]
-          end
-          if line.upcase.start_with? "ERROR:"
-            error = line
-          end
-        end
-        if error
-          log "***an error occurred starting #{fullname}: #{error}"
-          log "#{fullname}: create output: #{out}"
-          @errorinsts.push "#{fullname} (create returned error)"
-          delthread curthread
-          Thread.stop
-        end
-        log "#{fullname}: password=#{pass.inspect}, createip: #{create_ip.inspect}" if @verbose > 0
-        found = false
-        id = ip = nil
-        actives = get_active locflavor, false do |mid, mname, mip, mstate|      
-          if mname == fullname
-            id = mid
-            ip = mip
-            found = true
-            break
-          end
-        end
-        ip = create_ip if ip.nil?
-        if ! found
-          log "***something went wrong starting #{fullname}***"
-          log "#{fullname}: create output: #{out}"
-          log "#{fullname}: active: #{actives.inspect}"
-          @errorinsts.push fullname
-          delthread curthread
-          Thread.stop
-        end
-        log "Running created #{fullname} ip=#{ip} id=#{id}"
-        ssh_remove_ip ip
-        block.call scope, fullname, id, ip if block
         delthread curthread
       rescue => e
         log "caught error starting server #{fullname}: #{e.message}" 
@@ -417,8 +370,8 @@ class SpinDriver
 
   # driver wrappers
 
-  def create_server name, flavor, location, provtags
-    @driver.create_server name, flavor, location, provtags
+  def create_server name, scope, flavor, location, provtags
+    @driver.create_server name, scope, flavor, location, provtags
   end
 
   def delete_server name, id, location, flavor

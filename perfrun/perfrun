@@ -1,6 +1,8 @@
 #!/usr/bin/env ruby
 require 'optparse'
-require './perfdriver'
+require_relative 'drivers/provider'
+require_relative 'drivers/provisioning'
+require_relative 'perfdriver'
 
 class PerfRun
   TESTTIME = 12*60*60

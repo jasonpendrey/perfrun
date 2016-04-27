@@ -9,6 +9,7 @@ class Ec2Driver < Provider
 
   @verbose = 0
   @keypath = "config"
+  @authlocs = {}
 
   def self.get_active location, all, &block
     s = get_auth location
@@ -19,7 +20,7 @@ class Ec2Driver < Provider
     end
   end	     
 
-  def self.create_server name, flavor, loc, provtags
+  def self.create_server name, scope, flavor, loc, provtags
     if flavor['keyname'].blank?
       puts "must specify keyname"
       return nil
@@ -64,23 +65,23 @@ class Ec2Driver < Provider
       puts "can't create #{name}: #{server}"
       return nil
     end
-    id = server.id
     server.wait_for { 
       server.ready? 
     }
-    ip = server.public_ip_address
-    rv = ""
+    rv = {}
+    rv[:id] = server.id
+    rv[:ip] = server.public_ip_address
     if flavor['provisioning'] == 'chef'
       sleep 1
-      rv += ChefDriver.chef_bootstrap ip, name, provtags, flavor, loc, nil, config(loc) 
+      rv[:provisioning_out] = ChefDriver.bootstrap rv[:ip], name, provtags, flavor, loc, nil, config(loc) 
     end
     rv
   end
 
   def self.get_auth loc
-    return @auth if @auth
+    return @authlocs[loc] if @authlocs[loc]
     keys = get_keys loc
-    @auth = Fog::Compute.new(:provider => 'AWS', :aws_access_key_id => keys[:username], :aws_secret_access_key => keys[:apiKey], :region => loc)
+    @authlocs[loc] = Fog::Compute.new(:provider => 'AWS', :aws_access_key_id => keys[:username], :aws_secret_access_key => keys[:apiKey], :region => loc)
   end
 
   # XXX there's probably a better way to read knife.rb...

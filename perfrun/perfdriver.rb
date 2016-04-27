@@ -5,6 +5,8 @@ class PerfDriver
   WATCHDOGTMO = 10*60       # for creation
   WATCHDOGTMO2 = 30*60      # for running tests
   SSHOPTS = "-o LogLevel=quiet -oStrictHostKeyChecking=no"
+  CONNECTRETRY = 10
+  CONNECTRETRYTMO = 10
 
   def initialize
     Dir["./drivers/*.rb"].each {|file| require file }
@@ -100,7 +102,8 @@ class PerfDriver
           alines.each do |aline|
             if aline[:name] == fullname
               if @mode == 'delete'
-                Thread.new { puts delete_server(fullname, aline[:id], @curlocation, flavor) }
+                # XXX want to use threads here, but need to keep track of them to wait before exit
+                puts delete_server(fullname, aline[:id], @curlocation, flavor)
               elsif @mode == 'list'
                 puts sprintf("#{@curlocation}\t%-20s\t#{aline[:id]}\t#{aline[:state]}", fullname)
               end
@@ -227,82 +230,41 @@ class PerfDriver
         log "#{fullname}: waiting #{@jobwait*1}" if @jobwait > 0
         sleep @jobwait * 1
         @jobwait += 1
-        out = create_server(fullname, flavor, locflavor, provisioning_tags(scope))
-        if out.nil?
-          log "#{fullname} didn't start"
+        server = create_server(fullname, scope, flavor, locflavor, provisioning_tags(scope))
+        if server.nil?
+          log "#{fullname}: didn't start"
           @errorinsts.push "#(fullname} didn't start"
           delthread curthread        
           Thread.stop
         end
         cretime = Time.now-crestart
-        log "create output: #{out}\nend output" if @verbose > 0
-        pass = nil
-        create_ip = nil
-        create_id = nil
-        error = nil
-        out.encode!('UTF-8', :invalid => :replace)
-        out.split("\n").each do |line|
-          if line.start_with? "Password: "
-            pass = line.split(' ')[1]
-          end
-          if line.start_with? "Connecting to "
-            create_ip = line.split(' ')[2]
-          end
-          if line.start_with? "Floating IP Address:"
-            create_ip = line.split(' ')[3]
-          end
-          if line.upcase.start_with? "ERROR:"
-            error = line
-          end
+        log "Running created #{fullname} ip=#{server[:ip]} in #{cretime.round} seconds"
+        ssh_remove_ip server[:ip]
+        if server[:pass]
+          cmd = "sshpass -p #{server[:pass]} ssh #{SSHOPTS} #{flavor['login_as']}@#{server[:ip]} 'mkdir -p .ssh; chmod 0700 .ssh; echo \"#{@pubkey}\" >> .ssh/authorized_keys'"
+        else
+          # just use an ls to see if it's reachable... could be anything.
+          cmd = "ssh #{SSHOPTS} #{flavor['login_as']}@#{server[:ip]} 'ls'"
         end
-        if error
-          log "***an error occurred starting #{fullname}: #{error}"
-          log "#{fullname}: create output: #{out}"
-          @errorinsts.push "#{fullname} (create returned error)"
+        log "#{fullname}: testing connection..."
+        ntry = 0
+        while ntry < CONNECTRETRY
+          break if system (cmd)
+          ntry += 1
+          log "#{fullname}: connect retry #{ntry}"
+          sleep CONNECTRETRYTMO
+        end
+        if ntry >= CONNECTRETRY
+          log " #{fullname}: can't connect"
+          @errorinsts.push "#(fullname} (can't connect)"
           delthread curthread
           Thread.stop
         end
-        log "#{fullname}: password=#{pass.inspect}, createip: #{create_ip.inspect}" if @verbose > 0
-        found = false
-        id = ip = nil
-        actives = get_active locflavor, false do |mid, mname, mip, mstate|      
-          if mname == fullname
-            id = mid
-            ip = mip
-            found = true
-            break
-          end
-        end
-        ip = create_ip if ip.nil?
-        if ! found
-          log "***something went wrong starting #{fullname}***"
-          log "#{fullname}: create output: #{out}"
-          log "#{fullname}: active: #{actives.inspect}"
-          @errorinsts.push fullname
-          delthread curthread
-          Thread.stop
-        end
-        log "Running created #{fullname} ip=#{ip} id=#{id}"
-        ssh_remove_ip ip
-        if pass
-          ntry = 0
-          while ntry < 5
-            break if system ("sshpass -p #{pass} ssh #{SSHOPTS} #{flavor['login_as']}@#{ip} 'mkdir -p .ssh; chmod 0700 .ssh; echo \"#{@pubkey}\" >> .ssh/authorized_keys'")
-            ntry += 1
-            log "retry #{ntry} insert pubkey to authkeys..."
-            sleep 5
-          end
-          if ntry >= 5
-            log "can't insert public key into #{fullname}"
-            @errorinsts.push "#(fullname} (can't insert public key)"
-            delthread curthread
-            Thread.stop
-          end
-        end
-        cmd = "(./RunRemote -I '#{scopename}' -O '#{scope_id}' -i '#{flavor['keyfile']}' -H '#{@app_host}' -K #{APP_KEY} -S #{APP_SECRET} --create-time #{cretime} #{flavor['login_as']}@#{ip})  >> #{logfile} 2>&1"
+        log "#{fullname}: starting perfrun test"
+        cmd = "(./RunRemote -I '#{scopename}' -O '#{scope_id}' -i '#{flavor['keyfile']}' -H '#{@app_host}' -K #{APP_KEY} -S #{APP_SECRET} --create-time #{cretime} #{flavor['login_as']}@#{server[:ip]})  >> #{logfile} 2>&1"
         log "cmd=#{cmd}" if @verbose > 0
         @mutex.synchronize do 
-          @pids.push({pid: spawn(cmd), fullname: fullname, id: id, inst: scopename, loc: locflavor, started_at: Time.now, flavor: flavor})
+          @pids.push({pid: spawn(cmd), fullname: fullname, id: server[:id], inst: scopename, loc: locflavor, started_at: Time.now, flavor: flavor})
         end
         delthread curthread
       rescue => e
@@ -452,8 +414,8 @@ class PerfDriver
 
   # driver related calls
 
-  def create_server name, flavor, location, provtags
-    @driver.create_server name, flavor, location, provtags
+  def create_server name, scope, flavor, location, provtags
+    @driver.create_server name, scope, flavor, location, provtags
   end
  
 

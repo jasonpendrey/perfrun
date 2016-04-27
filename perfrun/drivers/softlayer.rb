@@ -5,6 +5,9 @@ class SoftlayerDriver < Provider
   PROVIDER_ID = 574
   LOGIN_AS = 'root'
 
+  #'6b7df4f0-cfed-4550-ae0b-a48944e1792a'
+  DEFIMAGE = '02d88f3c-8adb-497d-8e76-c7d80a27ed57'
+
   @verbose = 0
   @keypath = "config"
 
@@ -17,7 +20,7 @@ class SoftlayerDriver < Provider
     end
   end	     
 
-  def self.create_server name, flavor, loc, provtags
+  def self.create_server name, scope, flavor, loc, provtags
     if flavor['keyname'].blank?
       puts "must specify keyname"
       return nil
@@ -35,59 +38,21 @@ class SoftlayerDriver < Provider
       return nil
     end
     image = flavor['imageid']
-    image = '6b7df4f0-cfed-4550-ae0b-a48944e1792a' if image.blank?
-    server = self._create_server name, flavor['flavor'], loc, flavor['keyname'], image, false
+    image = DEFIMAGE if image.blank?
+    server = self._create_server name, scope, flavor['flavor'], loc, flavor['keyname'], image, false
     if server.nil?
       puts "can't create #{name}: #{server}"
       return nil
     end
-    id = server.id
     server.wait_for { 
       server.ready? 
     }
-    ip = server.public_ip_address
-    rv = ""
+    rv = {}
+    rv[:id] = server.id
+    rv[:ip] = server.public_ip_address
     if flavor['provisioning'] == 'chef'
       sleep 1
-      rv += ChefDriver.chef_bootstrap ip, name, provtags, flavor, loc, nil, config(loc) 
-    end
-    rv
-  end
-
-  def self.create_server_old name, flavor, location, provtags
-    roles = []
-    provtags.each do |tag|
-      roles.push 'role['+tag+']'
-    end
-    roles = roles.join ','
-    if flavor['keyname'].blank?
-      puts "must specify keyname"
-      return nil
-    end
-    if flavor['flavor'].blank?
-      puts "must specify flavor"
-      return nil
-    end
-    if flavor['login_as'].blank?
-      puts "must specify login_as"
-      return nil
-    end
-    if flavor['keyfile'].blank?
-      puts "must specify keyfile"
-      return nil
-    end
-    # 14.04
-    image = flavor['imageid']
-    image = '6b7df4f0-cfed-4550-ae0b-a48944e1792a' if image.blank?
-    scriptln = "yes|bundle exec knife #{CHEF_PROVIDER} server create --hostname '#{name}' --domain burstorm.com --datacenter '#{location}' -r '#{roles}' -N '#{name}' --image-id '#{image}' #{flavor['flavor']} -i '#{flavor['keyfile']}' --ssh-keys '#{flavor['keyname']}' -x '#{flavor['login_as']}' #{flavor['additional']} 2>&1"
-    puts "#{scriptln}" if @verbose > 0
-    rv = ''
-    IO.popen scriptln do |fd|
-      fd.each do |line|
-        puts line if @verbose > 0
-        STDOUT.flush
-        rv += line
-      end
+      rv[:provisioning_out] = ChefDriver.bootstrap rv[:ip], name, provtags, flavor, loc, nil, config(loc) 
     end
     rv
   end
@@ -126,7 +91,7 @@ class SoftlayerDriver < Provider
     rv
   end
 
-  def self._create_server name, instance, loc, keyname, image, createvol=false
+  def self._create_server name, scope, instance, loc, keyname, image, createvol=false
     s = get_auth loc
     k = s.key_pairs.get(keyname)
     sparams = { :name => name, 
@@ -134,19 +99,39 @@ class SoftlayerDriver < Provider
       :datacenter => loc,
       :key_pairs => [k]
     }
-    params = instance.split ' '
-    if params.length > 0
-      storage = 50
-      cpu = 2
-      ram = 2048
+    if instance.blank?
+      storage = scope['storage'] || 20
+      storage = 20 if storage < 20
+      cpu = scope['cores'] || 1
+      ram = (scope['ram'].to_f) * 1024
       sparams[:cpu] = cpu
       sparams[:ram] = ram
-#      sparams[:disk] = {'capacity' => storage }
+      #   needs os_code instead of an image_id... 
+      #          sparams[:ephemeral_storage] = true
+      #          sparams[:disk] = [{'device' => 0, 'diskImage' => {'capacity' => storage } }]
     else
       sparams[:flavor_id] = instance
     end
     server = s.servers.create(sparams)
     server
+  end
+
+  def self._delete_server id, loc
+    begin
+      s = get_auth loc
+      server = s.servers.get(id)    
+      if server
+        return if server.state == 'Halted'
+        if server.respond_to? :destroy
+          server.destroy 
+        else
+          server.delete
+        end
+      end
+    rescue Exception => e
+      puts "server=#{server.inspect}"
+      puts "e=#{e.message}"
+    end
   end
 
 end
