@@ -244,7 +244,7 @@ class PerfDriver
           cmd = "sshpass -p #{server[:pass]} ssh #{SSHOPTS} #{flavor['login_as']}@#{server[:ip]} 'mkdir -p .ssh; chmod 0700 .ssh; echo \"#{@pubkey}\" >> .ssh/authorized_keys'"
         else
           # just use an ls to see if it's reachable... could be anything.
-          cmd = "ssh #{SSHOPTS} #{flavor['login_as']}@#{server[:ip]} 'ls'"
+          cmd = "ssh #{SSHOPTS} -i #{flavor['keyfile']} #{flavor['login_as']}@#{server[:ip]} 'ls'"
         end
         log "#{fullname}: testing connection..."
         ntry = 0

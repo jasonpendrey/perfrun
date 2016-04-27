@@ -5,7 +5,6 @@ class SoftlayerDriver < Provider
   PROVIDER_ID = 574
   LOGIN_AS = 'root'
 
-  #'6b7df4f0-cfed-4550-ae0b-a48944e1792a'
   DEFIMAGE = '02d88f3c-8adb-497d-8e76-c7d80a27ed57'
 
   @verbose = 0
