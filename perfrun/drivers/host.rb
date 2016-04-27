@@ -31,13 +31,13 @@ class HostDriver < Provider
 
   def self.create_server name, scope, flavor, location, provtags
     # nothing to do
-    return 'true'
+    return {id:name, ip:name}
   end
 
   # @override
   def self.delete_server name, id, location, flavor
     # nothing to do
-    return 'true'
+    return "#{name} done"
   end
 
 end

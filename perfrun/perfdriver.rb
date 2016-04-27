@@ -2,8 +2,7 @@ require 'optparse'
 require 'active_support/all'  # for camelize
 
 class PerfDriver
-  WATCHDOGTMO = 10*60       # for creation
-  WATCHDOGTMO2 = 30*60      # for running tests
+  WATCHDOGTMO = 30*60       # for running
   SSHOPTS = "-o LogLevel=quiet -oStrictHostKeyChecking=no"
   CONNECTRETRY = 10
   CONNECTRETRYTMO = 10
@@ -11,7 +10,6 @@ class PerfDriver
   def initialize
     Dir["./drivers/*.rb"].each {|file| require file }
     @threads = []
-    @pids = []
     @verbose = 0
   end
 
@@ -33,7 +31,6 @@ class PerfDriver
     end
     @app_host = opts[:app_host] if opts[:app_host]
     @errorinsts = [] if @mode == 'run'
-    @pids = []
     @threads = []
     @mutex = Mutex.new
     @jobwait = 0 
@@ -87,16 +84,24 @@ class PerfDriver
             next unless start_server fullname, scope, @curlocation
           else
             ssh_remove_ip aline[:ip]
-            cmd = "(echo 'logging into #{fullname}...' && ./RunRemote  -O '#{scope['id']}' -I '#{scope['details']}' -i '#{flavor['keyfile']}' -H '#{@app_host}' -K #{APP_KEY} -S #{APP_SECRET} #{flavor['login_as']}@#{aline[:ip]}) >> #{logfile} 2>&1"
-            @mutex.synchronize do
-              @pids.push({pid: spawn(cmd), fullname: fullname,  inst: scope['details'], loc: @curlocation, started_at: Time.now, flavor: flavor})
+            curthread = {started_at:Time.now, fullname: fullname, inst: scope['details'], loc: @curlocation, state: 'running', flavor: flavor}
+            curthread[:thread] = Thread.new {
+              cmd = "(echo 'logging into #{fullname}...' && ./RunRemote  -O '#{scope['id']}' -I '#{scope['details']}' -i '#{flavor['keyfile']}' -H '#{@app_host}' -K #{APP_KEY} -S #{APP_SECRET} #{flavor['login_as']}@#{aline[:ip]}) >> #{logfile} 2>&1"
+              log "cmd=#{cmd}" if @verbose > 0
+              IO.popen cmd do |fd|
+                fd.each do |line|
+                  log line if @verbose > 0
+                end
+              end
+              log "#{fullname}: perfrun done"              
+              delthread curthread        
+            }
+            @mutex.synchronize do 
+              @threads.push curthread unless curthread[:dead]
             end
           end
           if @threads.length >= @maxjobs
             waitthreads
-          end
-          if @pids.length >= @maxjobs
-            waitpids
           end
         else
           alines.each do |aline|
@@ -116,12 +121,10 @@ class PerfDriver
         end
       end	     
       waitthreads
-      waitpids
     rescue Exception => e
       log "\n\n***Perfdriver: cleaning up because of #{e.inspect} ***"
       log e.backtrace.join "\n"
       log " threads: #{@threads.inspect}"
-      log " pids: #{@pids.inspect}"
       log " wd: #{@watchdog.inspect}"
       @aborted = true
       
@@ -185,37 +188,6 @@ class PerfDriver
     end
   end
 
-  def waitpids
-    log "\033[1mwaiting for #{@pids.inspect}\033[m" if @pids.length > 0
-    while @pids.length > 0
-      log "Run: waiting for #{@pids.inspect}" if @verbose > 0
-      @mutex.synchronize do 
-        @pids.each_with_index do |pid, idx|
-          begin
-            Process.wait(pid[:pid], Process::WNOHANG)
-          rescue Errno::ECHILD
-            log "deleting #{pid.inspect}" if @verbose > 0
-            @pids.delete_at idx
-            if pid[:id]
-              Thread.new { delete_server(pid[:fullname], pid[:id], pid[:loc], pid[:flavor]) }
-            end
-            next
-          end
-          if pid[:timedout]
-            log "deleting #{pid.inspect} even though it is timed out"
-            @pids.delete_at idx
-            if pid[:id]
-              Thread.new { delete_server(pid[:fullname], pid[:id], pid[:loc], pid[:flavor]) }
-            end
-          end
-        end
-      end
-      STDOUT.flush
-      sleep 10
-    end
-    @jobwait = 0
-  end
-
   def start_server fullname, scope, locflavor
     scopename = scope['details']
     flavor = scope['flavor']
@@ -223,7 +195,7 @@ class PerfDriver
     log "creating #{fullname}..."
     crestart = Time.now
     out = nil
-    curthread = {started_at:Time.now, fullname: fullname, inst: scopename, loc: locflavor}
+    curthread = {started_at:Time.now, fullname: fullname, inst: scopename, loc: locflavor, state: 'starting'}
     curthread[:thread] = Thread.new {
       begin
         curthread[:thread] = Thread.current
@@ -248,6 +220,7 @@ class PerfDriver
         end
         log "#{fullname}: testing connection..."
         ntry = 0
+        curthread[:state] = 'conntest'
         while ntry < CONNECTRETRY
           break if system (cmd)
           ntry += 1
@@ -257,14 +230,20 @@ class PerfDriver
         if ntry >= CONNECTRETRY
           log " #{fullname}: can't connect"
           @errorinsts.push "#(fullname} (can't connect)"
-          delthread curthread
-          Thread.stop
-        end
-        log "#{fullname}: starting perfrun test"
-        cmd = "(./RunRemote -I '#{scopename}' -O '#{scope_id}' -i '#{flavor['keyfile']}' -H '#{@app_host}' -K #{APP_KEY} -S #{APP_SECRET} --create-time #{cretime} #{flavor['login_as']}@#{server[:ip]})  >> #{logfile} 2>&1"
-        log "cmd=#{cmd}" if @verbose > 0
-        @mutex.synchronize do 
-          @pids.push({pid: spawn(cmd), fullname: fullname, id: server[:id], inst: scopename, loc: locflavor, started_at: Time.now, flavor: flavor})
+        else
+          log "#{fullname}: starting perfrun test"
+          curthread[:state] = 'running'
+          cmd = "(./RunRemote -I '#{scopename}' -O '#{scope_id}' -i '#{flavor['keyfile']}' -H '#{@app_host}' -K #{APP_KEY} -S #{APP_SECRET} --create-time #{cretime} #{flavor['login_as']}@#{server[:ip]})  >> #{logfile} 2>&1"
+          log "cmd=#{cmd}" if @verbose > 0
+          IO.popen cmd do |fd|
+            fd.each do |line|
+              log line if @verbose > 0
+            end
+          end
+          log "#{fullname}: reaping"
+          curthread[:state] = 'deleting'
+          delete_server(fullname, server[:id], locflavor, flavor)
+          log "#{fullname}: perfrun done"
         end
         delthread curthread
       rescue => e
@@ -282,16 +261,9 @@ class PerfDriver
   def status
     status = ""
     if @threads.length > 0
-      status += "   starting  "
+      status += "   running  "
       @threads.each do |t|
         status += "#{t[:fullname]} "
-      end
-      status += "\n"
-    end
-    if @pids.length > 0
-      status += "  running   "
-      @pids.each do |p|
-        status += "#{p[:fullname]} "
       end
       status += "\n"
     end
@@ -316,8 +288,7 @@ class PerfDriver
       while true        
         begin
           if @verbose > 0
-            log "Perfdriver WD: pids=#{@pids.inspect}"
-            log "    threads=#{@threads.inspect}" 
+            log "Perfdriver WD: threads=#{@threads.inspect}" 
           end
           now = Time.now
           @mutex.synchronize do
@@ -332,30 +303,6 @@ class PerfDriver
                 @errorinsts.push "#{cur[:fullname]} (create timed out)"
                 @threads.delete_at idx
                 cur[:dead] = true
-              end
-            end
-            @pids.each_with_index do |pid, idx|
-              if (now - pid[:started_at] > WATCHDOGTMO2 and ! pid[:timedout])
-                begin
-                  begin
-                    Process.getpgid pid[:pid]              
-                  rescue Errno::ESRCH
-                    next
-                  end
-                  begin
-                    Process.kill "HUP", pid[:pid]
-                  rescue Exeception => e
-                    log "WATCHDOG error killing #{pid[:pid]} #{e.message}"
-                  end
-                  log "WATCHDOG-#{Process.pid}: killing #{pid[:fullname]}/#{pid[:pid]} because #{((now-pid[:started_at])/60).round} minutes have elapsed"
-                  @errorinsts.push "#{pid[:fullname]} (timed out)"
-                  @pids.delete_at idx
-                  if pid[:id]
-                    Thread.new { delete_server(pid[:fullname], pid[:id], pid[:loc], pid[:flavor]) }
-                  end
-                  pid[:timedout] = true
-                rescue 
-                end
               end
             end
           end
@@ -379,7 +326,7 @@ class PerfDriver
   end
 
   def killall    
-    log "killall called for #{@curprovider}/#{@curlocation} t=#{@threads.length} p=#{@pids.length}" if @verbose > 0
+    log "killall called for #{@curprovider}/#{@curlocation} t=#{@threads.length}" if @verbose > 0
     @threads.each do |t|
       next if t[:dead]
       begin
@@ -390,14 +337,6 @@ class PerfDriver
         end
     end
     @threads = []
-    @pids.each do |pid|
-      begin
-        Process.kill "HUP", pid[:pid]
-        log "#{@curprovider}/#{@curlocation} killing pid #{pid[:pid]}" if @verbose > 0
-      rescue
-      end
-    end
-    @pids = []
   end
 
   def cleanup

@@ -3,13 +3,11 @@ require 'active_support/all'  # for camelize
 
 class SpinDriver
   WATCHDOGTMO = 30*60       # for creation
-  WATCHDOGTMO2 = 30*60      # for running tests
   SSHOPTS = "-o LogLevel=quiet -oStrictHostKeyChecking=no"
 
   def initialize
     Dir["./drivers/*.rb"].each {|file| require file }
     @threads = []
-    @pids = []
     @verbose = 0
   end
 
@@ -30,7 +28,6 @@ class SpinDriver
     end
     @app_host = opts[:app_host] if opts[:app_host]
     @errorinsts = [] if @mode == 'run'
-    @pids = []
     @threads = []
     @mutex = Mutex.new
     @jobwait = 0 
@@ -87,9 +84,6 @@ class SpinDriver
           if @threads.length >= @maxjobs
             waitthreads
           end
-          if @pids.length >= @maxjobs
-            waitpids
-          end
         else
           alines.each do |aline|
             if aline[:name] == fullname
@@ -107,12 +101,10 @@ class SpinDriver
         end
       end	     
       waitthreads
-      waitpids
     rescue Exception => e
       log "\n\n***Spindriver: cleaning up because of #{e.inspect} ***"
       log e.backtrace.join "\n"
       log " threads: #{@threads.inspect}"
-      log " pids: #{@pids.inspect}"
       log " wd: #{@watchdog.inspect}"
       @aborted = true
       
@@ -176,31 +168,6 @@ class SpinDriver
     end
   end
 
-  def waitpids
-    log "<b>waiting for #{@pids.inspect}</b>" if @pids.length > 0
-    while @pids.length > 0
-      log "Run: waiting for #{@pids.inspect}" if @verbose > 0
-      @mutex.synchronize do 
-        @pids.each_with_index do |pid, idx|
-          begin
-            Process.wait(pid[:pid], Process::WNOHANG)
-          rescue Errno::ECHILD
-            log "deleting #{pid.inspect}" if @verbose > 0
-            @pids.delete_at idx
-            next
-          end
-          if pid[:timedout]
-            log "deleting #{pid.inspect} even though it is timed out"
-            @pids.delete_at idx
-          end
-        end
-      end
-      STDOUT.flush
-      sleep 10
-    end
-    @jobwait = 0
-  end
-
   def start_server fullname, scope, locflavor, block
     scopename = scope['details']
     flavor = scope['flavor']
@@ -247,13 +214,6 @@ class SpinDriver
       end
       status += "\n"
     end
-    if @pids.length > 0
-      status += "  running   "
-      @pids.each do |p|
-        status += "#{p[:fullname]} "
-      end
-      status += "\n"
-    end
     status = "nothing running...\n" if status.empty?
     status
   end
@@ -275,8 +235,7 @@ class SpinDriver
       while true        
         begin
           if @verbose > 1
-            log "Spindriver WD: pids=#{@pids.inspect}"
-            log "    threads=#{@threads.inspect}" 
+            log "Spindriver WD: threads=#{@threads.inspect}" 
           end
           now = Time.now
           @mutex.synchronize do
@@ -291,27 +250,6 @@ class SpinDriver
                 @errorinsts.push "#{cur[:fullname]} (create timed out)"
                 @threads.delete_at idx
                 cur[:dead] = true
-              end
-            end
-            @pids.each_with_index do |pid, idx|
-              if (now - pid[:started_at] > WATCHDOGTMO2 and ! pid[:timedout])
-                begin
-                  begin
-                    Process.getpgid pid[:pid]              
-                  rescue Errno::ESRCH
-                    next
-                  end
-                  begin
-                    Process.kill "HUP", pid[:pid]
-                  rescue Exeception => e
-                    log "WATCHDOG error killing #{pid[:pid]} #{e.message}"
-                  end
-                  log "WATCHDOG-#{Process.pid}: killing #{pid[:fullname]}/#{pid[:pid]} because #{((now-pid[:started_at])/60).round} minutes have elapsed"
-                  @errorinsts.push "#{pid[:fullname]} (timed out)"
-                  @pids.delete_at idx
-                  pid[:timedout] = true
-                rescue 
-                end
               end
             end
           end
@@ -335,7 +273,7 @@ class SpinDriver
   end
 
   def killall    
-    log "killall called for #{@curprovider}/#{@curlocation} t=#{@threads.length} p=#{@pids.length}" if @verbose > 0
+    log "killall called for #{@curprovider}/#{@curlocation} t=#{@threads.length}" if @verbose > 0
     @threads.each do |t|
       next if t[:dead]
       begin
@@ -346,14 +284,6 @@ class SpinDriver
         end
     end
     @threads = []
-    @pids.each do |pid|
-      begin
-        Process.kill "HUP", pid[:pid]
-        log "#{@curprovider}/#{@curlocation} killing pid #{pid[:pid]}" if @verbose > 0
-      rescue
-      end
-    end
-    @pids = []
   end
 
   def cleanup

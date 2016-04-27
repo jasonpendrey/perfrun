@@ -136,7 +136,7 @@ class GoogleDriver < Provider
       while s = self.fetch_server(name, loc)
         break if s.state == 'TERMINATED'
         sleep 1
-        puts "s=#{s.state}"
+        puts "#{name}: #{s.state}"
       end
       while disk = self.fetch_disk(name, loc)
         sleep 1
