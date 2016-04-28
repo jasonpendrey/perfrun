@@ -6,9 +6,10 @@ class Ec2Driver < Provider
   MAXJOBS = 1
   PROVIDER_ID = 67
   LOGIN_AS = 'ubuntu'
+  DEFIMAGES = {'us-east-1' => 'ami-9a562df2', 'us-west-1' => 'ami-057f9d41', 'us-west-2' => 'ami-51526761',
+    'eu-west-1' => 'ami-2396f654', 'eu-central-1' => 'ami-00dae61d', 'ap-southeast-1' => 'ami-76546924',
+    'ap-southeast-2' => 'ami-cd611cf7', 'ap-northeast-1' => 'ami-c011d4c0', 'sa-east-1' => 'ami-75b23768' }
 
-  @verbose = 0
-  @keypath = "config"
   @authlocs = {}
 
   def self.get_active location, all, &block
@@ -38,28 +39,7 @@ class Ec2Driver < Provider
       return nil
     end
     image = flavor['imageid']
-    if image.blank?
-      case loc
-      when 'us-east-1'
-        image = 'ami-9a562df2'
-      when 'us-west-1'
-        image = 'ami-057f9d41'
-      when 'us-west-2'
-        image = 'ami-51526761'
-      when 'eu-west-1'
-        image = 'ami-2396f654'
-      when 'eu-central-1'
-        image = 'ami-00dae61d'
-      when 'ap-southeast-1'
-        image = 'ami-76546924'
-      when 'ap-southeast-2'
-        image = 'ami-cd611cf7'
-      when 'ap-northeast-1'
-        image = 'ami-c011d4c0'
-      when 'sa-east-1'
-        image = 'ami-75b23768'
-      end
-    end
+    image= DEFIMAGES[loc] if image.blank?
     server = self._create_server name, flavor['flavor'], loc, flavor['keyname'], image, false
     if server.nil?
       puts "can't create #{name}: #{server}"

@@ -1,6 +1,10 @@
 # base class for cloud provider drivers
 
 class Provider
+  @verbose = 0
+
+  class << self; attr_accessor :keypath end
+  @keypath = "config"
 
   def self.verbose= n
     @verbose = n
@@ -15,12 +19,9 @@ class Provider
     nil
   end
 
-  def self.keypath= path
-    @keypath = path
-  end
-
   def self.config loc
-    @keypath + '/knife.rb'
+    path = self.keypath || 'config'
+    path + '/knife.rb'
   end
 
   def self.gen_pass
@@ -35,8 +36,7 @@ class Provider
 
   def self._delete_server id, loc
     begin
-      s = get_auth loc
-      server = s.servers.get(id)    
+      server = self.fetch_server id, loc
       if server
         if server.respond_to? :destroy
           server.destroy 

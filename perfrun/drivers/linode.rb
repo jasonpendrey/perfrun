@@ -1,7 +1,6 @@
 require 'fog'
 
 class LinodeDriver < Provider
-
   PROVIDER='Linode'
   PROVIDER_ID = 90
   CHEF_PROVIDER='linode'
@@ -9,19 +8,15 @@ class LinodeDriver < Provider
   LOGIN_AS = 'root'
   DEFIMAGE = '124'
 
-
-  @verbose = 0
-  @keypath = "config"
-
   def self.get_active location, all, &block
     s = get_auth location
     servers = s.servers.each do |server|
+      next if server.attributes[:datacenterid].to_s != location.to_s
       if server.status == 1 or all      
         yield server.id, server.name, server.public_ip_address, server.status
       end
     end
   end	     
-
 
   def self.create_server name, scope, flavor, loc, provtags
     image = flavor['imageid']

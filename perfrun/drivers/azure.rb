@@ -10,12 +10,10 @@ class AzureDriver < Provider
   PROVIDER_ID = 92
   LOGIN_AS = 'ubuntu'
 
-  @verbose = 0
-  @keypath = "config"
-
   def self.get_active location, all, &block
     s = get_auth location
     s.servers.each do |server|
+      # XXX: fricking azure doesn't seem to have which datacetner it's located in... location doesn't return anything
       if server.state == 'ready' or all      
         yield server.vm_name, server.vm_name, server.public_ip_address, server.deployment_status
       end
@@ -43,7 +41,8 @@ class AzureDriver < Provider
       return nil
     end
     server.wait_for { 
-      server.ready? 
+      s = self.fetch_server server.vm_name, loc
+      s.ready? 
     }
     rv = {}
     rv[:ip] = server.ipaddress    
@@ -53,6 +52,12 @@ class AzureDriver < Provider
       rv[:provisioning_out] = ChefDriver.bootstrap rv[:ip], name, provtags, flavor, loc, nil, config(loc) 
     end
     rv
+  end
+
+  # @override... fricking ms
+  def self.fetch_server id, loc
+    s = get_auth loc
+    server = s.servers.get(id, id)
   end
 
 
@@ -100,25 +105,5 @@ class AzureDriver < Provider
   end
 
 end
-
-# monkey patch... not working yet.
-
-module Fog
-  module Compute
-    class Azure
-      class Servers < Fog::Collection
-#        model Fog::Compute::Azure::Server
-
-        def get(identity, cloud_service_name=nil)
-          cloud_service_name = identity unless cloud_service_name
-          all.find { |f| f.name == identity && f.cloud_service_name == cloud_service_name }
-        rescue Fog::Errors::NotFound
-          nil
-        end
-      end
-    end
-  end
-end
-
 
 

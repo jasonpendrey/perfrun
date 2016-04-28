@@ -4,15 +4,12 @@ class SoftlayerDriver < Provider
   MAXJOBS = 1
   PROVIDER_ID = 574
   LOGIN_AS = 'root'
-
   DEFIMAGE = '02d88f3c-8adb-497d-8e76-c7d80a27ed57'
-
-  @verbose = 0
-  @keypath = "config"
 
   def self.get_active location, all, &block
     s = get_auth location
     servers = s.servers.each do |server|
+      next if server.attributes[:datacenter] and server.attributes[:datacenter][:name] != location
       if server.state == 'Running' or all      
         yield server.id, server.name, server.public_ip_address, server.state
       end

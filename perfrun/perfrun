@@ -105,6 +105,8 @@ class PerfRun
     opts[:object] = obj
     opts[:tags] = @tags
     opts[:mode] = @mode
+    opts[:autodelete] = true
+    opts[:test_connection] = true
     opts[:app_host] = @app_host if @app_host
     if @mode == 'run' or @mode == 'delete'
       curthread = {started_at:Time.now, prov: prov, loc: loc}
@@ -113,7 +115,9 @@ class PerfRun
         puts "#{@mode.capitalize} from #{prov}/#{loc} at #{Time.now}"
         curthread[:pd] = pd = PerfDriver.new
         pd.verbose = @verbose
-        pd.run opts
+        pd.run opts do |server|
+          pd.perfrun server[:scope], server[:flavor], server[:ip], server[:cretime] if @mode == 'run'
+        end
         delthread curthread
       }
       @mutex.synchronize do 

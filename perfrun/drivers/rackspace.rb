@@ -11,8 +11,6 @@ class RackspaceDriver < Provider
   DEFIMAGE = '28153eac-1bae-4039-8d9f-f8b513241efe'   # Unbuntu 14.04 PVHVM
 
   @authlocs = {}
-  @keypath = "config"
-  @verbose = 0
 
   def self.get_active loc, all, &block      
     srvs = list_servers loc
@@ -95,7 +93,8 @@ class RackspaceDriver < Provider
 
   def self.config loc
     loc = loc.upcase
-    @keypath + (loc == "LON" ? '/knife.rsuk.rb' : '/knife.rb')
+    path = self.keypath || 'config'
+    path + (loc == "LON" ? '/knife.rsuk.rb' : '/knife.rb')
   end
 
   # XXX there's probably a better way to read knife.rb...

@@ -2,7 +2,7 @@
 require 'optparse'
 require_relative 'drivers/provider'
 require_relative 'drivers/provisioning'
-require_relative 'spindriver'
+require_relative 'perfdriver'
 
 class Spinup
   CONFIG = "config/spinup.json"
@@ -41,12 +41,14 @@ class Spinup
       curthread = {started_at:Time.now, prov: prov, loc: loc}
       curthread[:thread] = Thread.new {    
         curthread[:thread] = Thread.current
-        curthread[:pd] = pd = SpinDriver.new
-        pd.run opts do |scope, fullname, id, ip|
+        curthread[:pd] = pd = PerfDriver.new
+        pd.run opts do |server|
           # XXX need to rationalize this to call an external hook
-          puts "#{id}: #{fullname} #{ip}"
-          puts RackspaceDriver.del_dns "burstorm.com", fullname
-          puts RackspaceDriver.add_dns "burstorm.com", fullname, ip
+          if (@mode == 'run')
+            puts "#{server[:id]}: #{server[:name]} #{server[:ip]}"
+            puts RackspaceDriver.del_dns "burstorm.com", server[:name]
+            puts RackspaceDriver.add_dns "burstorm.com", server[:name], server[:ip]
+          end
         end
         delthread curthread
       }
@@ -54,7 +56,7 @@ class Spinup
         @threads.push curthread unless curthread[:dead]
       end
     else
-      pd = SpinDriver.new
+      pd = PerfDriver.new
       pd.verbose = @verbose
       pd.run opts
     end
@@ -75,7 +77,7 @@ class Spinup
           @mode = 'list'
         }
         o.on('--verbose', '-v') { |b|
-          @verbose = 1
+          @verbose = 2
         }
         o.on('--dryrun') { |b|
           @dryrun = true

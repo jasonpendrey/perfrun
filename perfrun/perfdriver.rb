@@ -13,7 +13,7 @@ class PerfDriver
     @verbose = 0
   end
 
-  def run opts 
+  def run opts, &block
     @app_host = $apphost || APP_HOST
     @opts = opts
     @aborted = false
@@ -21,11 +21,13 @@ class PerfDriver
     @tags = opts[:tags]
     @mode = opts[:mode]    
     @verbose = opts[:verbose] || 0
+    @autodelete = opts[:autodelete]    
+    @testconnection = opts[:test_connection]
     @curprovider = object['provider']['name']
     @curlocation = object['provider']['location_flavor'] || object['provider']['address']
     @driver = ((object['provider']['cloud_driver'] || 'host').camelize+'Driver').constantize
     # no driver verbose mode in perfrun mode... too noisy 
-    @driver.verbose = 0
+    @driver.verbose = @verbose - 1
     if @mode == 'run'
       @started_at = Time.now
     end
@@ -33,7 +35,6 @@ class PerfDriver
     @errorinsts = [] if @mode == 'run'
     @threads = []
     @mutex = Mutex.new
-    @jobwait = 0 
     watchdog
     log "Perfrun for #{object['name']}@#{@curprovider}/#{@curlocation} to #{@app_host}" if @mode == 'run'
     begin
@@ -54,13 +55,14 @@ class PerfDriver
           next
         end
         flavor['login_as'] = login_as if flavor['login_as'].blank?
-        if flavor['keyfile']
+        unless flavor['keyfile'].blank?
           if ! flavor['keyfile'].include?('/') and ! flavor['keyfile'].include?('..')
             flavor['keyfile'] = "#{Dir.pwd}/config/#{flavor['keyfile']}"
           end
         else
           flavor['keyfile'] = "#{Dir.pwd}/config/servers.pem"
         end
+        
         fullname = fullinstname scope, @curlocation
         log "Running #{fullname}..." if @mode == 'run'
         if ! fetchedactive
@@ -78,31 +80,47 @@ class PerfDriver
           break
         end
         if @mode == 'run'
-          @pubkey = `ssh-keygen -y -f #{flavor['keyfile']}`
+          @pubkey = `ssh-keygen -y -f #{File.expand_path flavor['keyfile']}`
           raise "can't access #{flavor['keyfile']}" if @pubkey.nil? or @pubkey.empty?
-          if ! active.include? fullname or ! aline or ! aline[:ip]
-            next unless start_server fullname, scope, @curlocation
-          else
-            ssh_remove_ip aline[:ip]
-            curthread = {started_at:Time.now, fullname: fullname, inst: scope['details'], loc: @curlocation, state: 'running', flavor: flavor}
-            curthread[:thread] = Thread.new {
-              cmd = "(echo 'logging into #{fullname}...' && ./RunRemote  -O '#{scope['id']}' -I '#{scope['details']}' -i '#{flavor['keyfile']}' -H '#{@app_host}' -K #{APP_KEY} -S #{APP_SECRET} #{flavor['login_as']}@#{aline[:ip]}) >> #{logfile} 2>&1"
-              log "cmd=#{cmd}" if @verbose > 0
-              IO.popen cmd do |fd|
-                fd.each do |line|
-                  log line if @verbose > 0
-                end
+          scopename = scope['details'] || 'compute-'+scope['id']
+          curthread = {started_at:Time.now, fullname: fullname, inst: scopename, loc: @curlocation, state: 'starting'}
+          curthread[:thread] = Thread.new {
+            curthread[:thread] = Thread.current
+            start =  Time.now
+            ip = id = nil
+            begin
+              if ! active.include? fullname or ! aline or ! aline[:ip]
+                server = start_server fullname, scope, @curlocation, curthread
+                ip = server[:ip]
+                id = server[:id]
+                curthread[:created] = true
+              else
+                ip = aline[:ip]
+                id = aline[:id]
+                ssh_remove_ip ip
+                curthread[:created] = false
               end
-              log "#{fullname}: perfrun done"              
-              delthread curthread        
-            }
-            @mutex.synchronize do 
-              @threads.push curthread unless curthread[:dead]
-            end
+              if ip
+                log "#{fullname}: starting perfrun test"
+                curthread[:state] = 'running'
+                block.call({name: fullname, scope: scope, flavor: flavor, id: id, ip: ip, cretime: Time.now-start}) if block
+                if curthread[:created] and @autodelete
+                  log "#{fullname}: deleting..."
+                  curthread[:state] = 'deleting'
+                  delete_server(fullname, id, @curlocation, flavor)
+                end
+                log "#{fullname}: perfrun done"
+              end
+            rescue Exception => e
+              log "#{fullname} #{curthread[:state]}: caught error with server start: #{e.message}" 
+              log e.backtrace.join "\n"
+            end            
+            delthread curthread        
+          }
+          @mutex.synchronize do 
+            @threads.push curthread unless curthread[:dead]
           end
-          if @threads.length >= @maxjobs
-            waitthreads
-          end
+          waitthreads
         else
           alines.each do |aline|
             if aline[:name] == fullname
@@ -122,24 +140,10 @@ class PerfDriver
       end	     
       waitthreads
     rescue Exception => e
-      log "\n\n***Perfdriver: cleaning up because of #{e.inspect} ***"
-      log e.backtrace.join "\n"
-      log " threads: #{@threads.inspect}"
-      log " wd: #{@watchdog.inspect}"
-      @aborted = true
-      
-      @watchdog.kill if @watchdog
-      if @mode == 'run'
-        cleanup
-        if @errorinsts.length > 0
-          @errorinsts.uniq!
-          log "instances that didn't complete: #{@errorinsts.join(',')}"
-        end
-        log "\033[1mRun aborted for #{objects}\033[m" 
-      else
-        killall
-      end
-      exit 1
+      log "\n\n***Perfdriver: #{e.class} #{e.message} ***"      
+      log e.backtrace.join "\n" if e.class != Interrupt
+      log "   threads: #{@threads.inspect}"
+      @aborted = true      
     end
     @watchdog.kill if @watchdog
     if @mode == 'run'
@@ -149,6 +153,9 @@ class PerfDriver
         log "instances that didn't complete: #{@errorinsts.join(',')}"
       end
       log "\033[1mPerfrun #{@curprovider}/#{@curlocation} done at #{Time.now}; #{((Time.now-@started_at)/60).round} minutes\033[0m"
+    else
+      killall if @aborted
+      log "\033[1mPerfrun #{@curprovider}/#{@curlocation} #{@aborted ? 'aborted' : 'done'}\033[0m"
     end
   end
 
@@ -172,15 +179,15 @@ class PerfDriver
   end
 
   def waitthreads
-    log "\033[1mStart waiting for #{@threads.length} threads: #{@threads.inspect}\033[m" if @threads.length > 0
-    while @threads.length > 0
+    log "\033[1mStart waiting for #{@threads.length} threads: #{@threads.inspect}\033[m" if @threads.length > @maxjobs
+    while @threads.length > @maxjobs
       @mutex.synchronize do 
         @threads.each_with_index do |t, idx|
           if t[:dead]
             @threads.delete_at idx
             next
           end
-          log "waiting for #{t[:fullname]} to start" if @verbose > 0
+          log "waiting for #{t[:fullname]} to finish" if @verbose > 0
         end
       end
       STDOUT.flush
@@ -188,74 +195,52 @@ class PerfDriver
     end
   end
 
-  def start_server fullname, scope, locflavor
-    scopename = scope['details']
-    flavor = scope['flavor']
-    scope_id = scope['id']
-    log "creating #{fullname}..."
-    crestart = Time.now
-    out = nil
-    curthread = {started_at:Time.now, fullname: fullname, inst: scopename, loc: locflavor, state: 'starting'}
-    curthread[:thread] = Thread.new {
-      begin
-        curthread[:thread] = Thread.current
-        log "#{fullname}: waiting #{@jobwait*1}" if @jobwait > 0
-        sleep @jobwait * 1
-        @jobwait += 1
-        server = create_server(fullname, scope, flavor, locflavor, provisioning_tags(scope))
-        if server.nil?
-          log "#{fullname}: didn't start"
-          @errorinsts.push "#(fullname} didn't start"
-          delthread curthread        
-          Thread.stop
-        end
-        cretime = Time.now-crestart
-        log "Running created #{fullname} ip=#{server[:ip]} in #{cretime.round} seconds"
-        ssh_remove_ip server[:ip]
-        if server[:pass]
-          cmd = "sshpass -p #{server[:pass]} ssh #{SSHOPTS} #{flavor['login_as']}@#{server[:ip]} 'mkdir -p .ssh; chmod 0700 .ssh; echo \"#{@pubkey}\" >> .ssh/authorized_keys'"
-        else
-          # just use an ls to see if it's reachable... could be anything.
-          cmd = "ssh #{SSHOPTS} -i #{flavor['keyfile']} #{flavor['login_as']}@#{server[:ip]} 'ls'"
-        end
-        log "#{fullname}: testing connection..."
-        ntry = 0
-        curthread[:state] = 'conntest'
-        while ntry < CONNECTRETRY
-          break if system (cmd)
-          ntry += 1
-          log "#{fullname}: connect retry #{ntry}"
-          sleep CONNECTRETRYTMO
-        end
-        if ntry >= CONNECTRETRY
-          log " #{fullname}: can't connect"
-          @errorinsts.push "#(fullname} (can't connect)"
-        else
-          log "#{fullname}: starting perfrun test"
-          curthread[:state] = 'running'
-          cmd = "(./RunRemote -I '#{scopename}' -O '#{scope_id}' -i '#{flavor['keyfile']}' -H '#{@app_host}' -K #{APP_KEY} -S #{APP_SECRET} --create-time #{cretime} #{flavor['login_as']}@#{server[:ip]})  >> #{logfile} 2>&1"
-          log "cmd=#{cmd}" if @verbose > 0
-          IO.popen cmd do |fd|
-            fd.each do |line|
-              log line if @verbose > 0
-            end
-          end
-          log "#{fullname}: reaping"
-          curthread[:state] = 'deleting'
-          delete_server(fullname, server[:id], locflavor, flavor)
-          log "#{fullname}: perfrun done"
-        end
-        delthread curthread
-      rescue => e
-        log "caught error starting server #{fullname}: #{e.message}" 
-        log e.backtrace.join "\n"
-        delthread curthread
+  def perfrun scope, flavor, ip, cretime=nil
+    scopename = scope['details'] || 'compute-'+scope['id']
+    cmd = "(./RunRemote -I '#{scopename}' -O '#{scope['id']}' -i '#{File.expand_path flavor['keyfile']}' -H '#{@app_host}' -K #{APP_KEY} -S #{APP_SECRET} --create-time #{cretime} #{flavor['login_as']}@#{ip})  >> #{logfile} 2>&1"
+    log "cmd=#{cmd}" if @verbose > 0
+    IO.popen cmd do |fd|
+      fd.each do |line|
+        log line if @verbose > 0
       end
-    }
-    @mutex.synchronize do 
-      @threads.push curthread unless curthread[:dead]
     end
-    return true
+  end
+
+  def start_server fullname, scope, locflavor, curthread
+    flavor = scope['flavor']
+    log "creating #{fullname}..."
+    curthread[:state] = 'starting'
+    server = create_server(fullname, scope, flavor, locflavor, provisioning_tags(scope))
+    if server.nil?
+      log "#{fullname}: didn't start"
+      @errorinsts.push "#{fullname} didn't start"
+      return nil
+    end
+    log "Running created #{fullname} ip=#{server[:ip]}"
+    ssh_remove_ip server[:ip]
+    if @testconnection
+      if server[:pass]
+        cmd = "sshpass -p #{server[:pass]} ssh #{SSHOPTS} #{flavor['login_as']}@#{server[:ip]} 'mkdir -p .ssh; chmod 0700 .ssh; echo \"#{@pubkey}\" >> .ssh/authorized_keys'"
+      else
+        # just use an ls to see if it's reachable... could be anything.
+        cmd = "ssh #{SSHOPTS} -i #{File.expand_path flavor['keyfile']} #{flavor['login_as']}@#{server[:ip]} 'ls'"
+      end
+      log "#{fullname}: testing connection..."
+      ntry = 0
+      curthread[:state] = 'conntest'
+      while ntry < CONNECTRETRY
+        break if system (cmd)
+        ntry += 1
+        log "#{fullname}: connect retry #{ntry}"
+        sleep CONNECTRETRYTMO
+      end
+      if ntry >= CONNECTRETRY
+        log " #{fullname}: can't connect"
+        @errorinsts.push "#(fullname} (can't connect)"
+        return nil
+      end
+    end
+    return server
   end
 
   def status
@@ -342,7 +327,7 @@ class PerfDriver
   def cleanup
     log "cleanup called for #{@curprovider}/#{@curlocation}"
     killall
-    if @mode == 'run'
+    if @mode == 'run' and @autodelete
       opts = @opts.clone
       opts[:mode] = 'delete'
       r = self.class.new
@@ -367,13 +352,11 @@ class PerfDriver
   end
 
   def fullinstname scope, locflavor
-    if @driver.respond_to? :fullinstname
-      @driver.fullinstname scope, locflavor
-    else
-      scopename = scope['details'] || 'compute-'+scope['id']
-      rv = scopename+'-'+(locflavor || 'no-location')
-      rv.gsub(/[ \/]/, '-')
+    rv = scope['details'] || 'compute-'+scope['id']
+    if @autodelete
+      rv += '-'+(locflavor || 'no-location')
     end
+    rv.gsub(/[ \/]/, '-')
   end
 
   def maxjobs

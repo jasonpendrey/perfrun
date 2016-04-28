@@ -6,8 +6,6 @@ class GoogleDriver < Provider
   PROVIDER_ID = 920  
   LOGIN_AS = 'ubuntu'
   DEFIMAGE='ubuntu-1404-trusty-v20160406'
-  @verbose = 0
-  @keypath = "config"
 
   def self.get_active location, all, &block
     s = get_auth location

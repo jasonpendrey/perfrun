@@ -1,10 +1,7 @@
 class HostDriver < Provider
-
   CHEF_PROVIDER = "host"
   MAXJOBS = 6
   LOGIN_AS = 'root'
-
-  @verbose = 0
 
   # @override
   def self.get_active location, all, &block
@@ -22,7 +19,6 @@ class HostDriver < Provider
     end
   end
 
-  # @override
   def self.fullinstname scope, locflavor
     scopename = scope['details'] || 'compute-'+scope['id']
     rv = scopename+'-'+(locflavor || 'no-location')

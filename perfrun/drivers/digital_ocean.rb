@@ -1,19 +1,16 @@
 require 'fog'
 
 class DigitalOceanDriver < Provider
-
   PROVIDER='Digital Ocean'
   CHEF_PROVIDER='digital_ocean'
   MAXJOBS = 1
   PROVIDER_ID = 110
   LOGIN_AS = 'root'
 
-  @verbose = 0
-  @keypath = "config"
-
   def self.get_active location, all, &block
     s = get_auth location
     servers = s.servers.each do |server|
+      next if server.attributes[:region]['slug'] != location
       if server.status == 'active' or all      
         yield server.id, server.name, server.public_ip_address, server.status
       end
