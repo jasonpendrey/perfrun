@@ -1,3 +1,5 @@
+require 'fog'
+
 class SoftlayerDriver < Provider
   PROVIDER='Softlayer'
   CHEF_PROVIDER='softlayer'

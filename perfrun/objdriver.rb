@@ -173,7 +173,6 @@ class ObjDriver
     end
     @watchdog.kill if @watchdog
     if @mode == 'run'
-      puts "clean1"
       cleanup
       if @errorinsts.length > 0
         @errorinsts.uniq!

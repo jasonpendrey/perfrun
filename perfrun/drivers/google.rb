@@ -1,3 +1,4 @@
+require 'fog'
 
 class GoogleDriver < Provider
   PROVIDER='Google Compute Engine'
