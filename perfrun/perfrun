@@ -1,8 +1,6 @@
 #!/usr/bin/env ruby
 require 'optparse'
-require_relative 'drivers/provider'
-require_relative 'drivers/provisioning'
-require_relative 'perfdriver'
+require_relative 'objdriver'
 
 class PerfRun
   TESTTIME = 12*60*60
@@ -113,7 +111,7 @@ class PerfRun
       curthread[:thread] = Thread.new {    
         curthread[:thread] = Thread.current
         puts "#{@mode.capitalize} from #{prov}/#{loc} at #{Time.now}"
-        curthread[:pd] = pd = PerfDriver.new
+        curthread[:pd] = pd = ObjDriver.new
         pd.verbose = @verbose
         pd.run opts do |server|
           pd.perfrun server[:scope], server[:flavor], server[:ip], server[:cretime] if @mode == 'run'
@@ -125,7 +123,7 @@ class PerfRun
       end
     else
       puts "#{@mode.capitalize} #{prov}/#{loc}"
-      pd = PerfDriver.new
+      pd = ObjDriver.new
       pd.verbose = @verbose
       pd.run opts
     end

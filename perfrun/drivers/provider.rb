@@ -13,9 +13,6 @@ class Provider
 
   def self.delete_server name, id, loc, flavor
     self._delete_server id, loc
-    if flavor['provisioning'] == 'chef'
-      ChefDriver.delete_node(name) 
-    end
     nil
   end
 

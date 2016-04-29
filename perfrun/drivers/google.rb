@@ -16,7 +16,7 @@ class GoogleDriver < Provider
     end
   end	     
 
-  def self.create_server name, scope, flavor, loc, provtags
+  def self.create_server name, scope, flavor, loc
     if flavor['flavor'].blank?
       puts "must specify flavor"
       return nil
@@ -42,10 +42,6 @@ class GoogleDriver < Provider
     }
     rv[:id] = server.id
     rv[:ip] = server.public_ip_address
-    if flavor['provisioning'] == 'chef'
-      sleep 1
-      rv[:provisioning_out] = ChefDriver.bootstrap ip, name, provtags, flavor, loc, nil, config(loc) 
-    end
     rv
   end
 
@@ -117,9 +113,6 @@ class GoogleDriver < Provider
 
   def self.delete_server name, id, loc, flavor
     self._delete_server id, name, loc
-    if flavor['provisioning'] == 'chef'
-      ChefDriver.delete_node(name) 
-    end
     nil
   end
 

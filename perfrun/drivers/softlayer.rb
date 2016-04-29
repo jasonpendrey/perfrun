@@ -16,7 +16,7 @@ class SoftlayerDriver < Provider
     end
   end	     
 
-  def self.create_server name, scope, flavor, loc, provtags
+  def self.create_server name, scope, flavor, loc
     if flavor['keyname'].blank?
       puts "must specify keyname"
       return nil
@@ -46,10 +46,6 @@ class SoftlayerDriver < Provider
     rv = {}
     rv[:id] = server.id
     rv[:ip] = server.public_ip_address
-    if flavor['provisioning'] == 'chef'
-      sleep 1
-      rv[:provisioning_out] = ChefDriver.bootstrap rv[:ip], name, provtags, flavor, loc, nil, config(loc) 
-    end
     rv
   end
 

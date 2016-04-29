@@ -20,7 +20,7 @@ class AzureDriver < Provider
     end
   end	     
 
-  def self.create_server name, scope, flavor, loc, provtags
+  def self.create_server name, scope, flavor, loc
     if flavor['flavor'].blank?
       puts "must specify flavor"
       return nil
@@ -47,10 +47,6 @@ class AzureDriver < Provider
     rv = {}
     rv[:ip] = server.ipaddress    
     rv[:id] = server.vm_name
-    if flavor['provisioning'] == 'chef'
-      sleep 1
-      rv[:provisioning_out] = ChefDriver.bootstrap rv[:ip], name, provtags, flavor, loc, nil, config(loc) 
-    end
     rv
   end
 

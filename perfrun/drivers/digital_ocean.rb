@@ -17,7 +17,7 @@ class DigitalOceanDriver < Provider
     end
   end	     
 
-  def self.create_server name, scope, flavor, loc, provtags
+  def self.create_server name, scope, flavor, loc
     image = flavor['imageid']
     image = get_image(loc) if image.blank?
     if image.blank?
@@ -51,14 +51,6 @@ class DigitalOceanDriver < Provider
     }
     rv[:id] = server.id
     rv[:ip] = server.public_ip_address
-    if flavor['provisioning'] == 'chef'
-      sleep 1
-      begin
-        rv[:provisioning_out] = ChefDriver.bootstrap rv[:ip], name, provtags, flavor, loc, nil, config(loc) 
-      rescue Exception => e
-        puts "e=#{e.message}"
-      end
-    end
     rv
   end
 

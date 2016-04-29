@@ -27,13 +27,10 @@ class RackspaceDriver < Provider
 
   def self.delete_server name, id, loc, flavor
     self._delete_server id, loc
-    if flavor['provisioning'] == 'chef'
-      ChefDriver.delete_node(name) 
-    end
     nil
   end
 
-  def self.create_server name, scope, flavor, loc, provtags
+  def self.create_server name, scope, flavor, loc
     loc = loc.upcase
     if flavor['flavor'].blank?
       puts "must specify flavor"
@@ -82,11 +79,6 @@ class RackspaceDriver < Provider
     end
     if nretry <= 0
       return "ERROR: timed out creating #{name}\n"
-    end
-    if flavor['provisioning'] == 'chef'
-      sleep 1
-      ChefDriver.verbose = @verbose
-      rv[:provisioning_out] = ChefDriver.bootstrap rv[:ip], name, provtags, flavor, loc, rv[:pass], config(loc) 
     end
     rv
   end
