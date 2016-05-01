@@ -32,14 +32,6 @@ class RackspaceDriver < Provider
 
   def self.create_server name, scope, flavor, loc
     loc = loc.upcase
-    if flavor['flavor'].blank?
-      puts "must specify flavor"
-      return nil
-    end
-    if flavor['login_as'].blank?
-      puts "must specify login_as"
-      return nil
-    end
     keyname = flavor['keyname']
     image = flavor['imageid']
     image = DEFIMAGE if image.blank?

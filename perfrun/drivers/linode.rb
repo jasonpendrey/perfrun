@@ -21,14 +21,6 @@ class LinodeDriver < Provider
   def self.create_server name, scope, flavor, loc
     image = flavor['imageid']
     image = DEFIMAGE if image.blank?
-    if flavor['flavor'].blank?
-      puts "must specify flavor"
-      return nil
-    end
-    if flavor['login_as'].blank?
-      puts "must specify login_as"
-      return nil
-    end
     pass = gen_pass
     rv = {}
     server= self._create_server name, flavor['flavor'], loc, pass, image, false

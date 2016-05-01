@@ -9,6 +9,7 @@ class AzureDriver < Provider
   MAXJOBS = 1
   PROVIDER_ID = 92
   LOGIN_AS = 'ubuntu'
+  DEFIMAGE = 'b39f27a8b8c64d52b05eac6a62ebad85__Ubuntu-14_04_2_LTS-amd64-server-20150309-en-us-30GB'
 
   def self.get_active location, all, &block
     s = get_auth location
@@ -21,20 +22,8 @@ class AzureDriver < Provider
   end	     
 
   def self.create_server name, scope, flavor, loc
-    if flavor['flavor'].blank?
-      puts "must specify flavor"
-      return nil
-    end
-    if flavor['login_as'].blank?
-      puts "must specify login_as"
-      return nil
-    end
-    if flavor['keyfile'].blank?
-      puts "must specify keyfile"
-      return nil
-    end
     image = flavor['imageid']
-    image = 'b39f27a8b8c64d52b05eac6a62ebad85__Ubuntu-14_04_2_LTS-amd64-server-20150309-en-us-30GB' if image.blank?
+    image = DEFIMAGE if image.blank?
     server = self._create_server name, scope, flavor['flavor'], loc, flavor['keyfile'], image
     if server.nil?
       puts "can't create #{name}: #{server}"

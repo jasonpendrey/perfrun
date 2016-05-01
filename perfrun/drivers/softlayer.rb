@@ -23,18 +23,6 @@ class SoftlayerDriver < Provider
       puts "must specify keyname"
       return nil
     end
-    if flavor['flavor'].blank?
-      puts "must specify flavor"
-      return nil
-    end
-    if flavor['login_as'].blank?
-      puts "must specify login_as"
-      return nil
-    end
-    if flavor['keyfile'].blank?
-      puts "must specify keyfile"
-      return nil
-    end
     image = flavor['imageid']
     image = DEFIMAGE if image.blank?
     server = self._create_server name, scope, flavor['flavor'], loc, flavor['keyname'], image, false

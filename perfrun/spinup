@@ -12,20 +12,27 @@ class Spinup
   @dryrun = false
   @threads = []
   @config = CONFIG
+  @maxjobs = 4
   
   def self.oneoffrun     
     @objs.each do |obj|
       next if obj['compute_scopes'].length == 0
       if ARGV.length > 0
-        prov = obj['provider']['cloud_driver']
-        next if ! ARGV.include? prov
+        scopes = []
+        obj['compute_scopes'].each do |scope|
+          if ARGV.include? scope['details']
+            scopes.push scope 
+          end
+        end
+      else
+        scopes = nil
       end
-      runone obj
+      runone obj, scopes
     end
     waitthreads
   end
   
-  def self.runone obj
+  def self.runone obj, scopes=nil
     prov = obj['provider']['name']
     loc = obj['provider']['location_flavor'] || obj['provider']['address']
     opts = {}
@@ -33,6 +40,8 @@ class Spinup
     opts[:object] = obj
     opts[:tags] = @tags
     opts[:mode] = @mode
+    opts[:maxjobs] = @maxjobs
+    opts[:scopes] = scopes
     opts[:app_host] = @app_host if @app_host
     puts "#{@mode.capitalize} #{obj['name']}@#{prov}/#{loc} using #{@config}"
     if @mode == 'run' or @mode == 'delete'
@@ -64,6 +73,12 @@ class Spinup
 
   def self.main
     @mutex = Mutex.new
+    $LOAD_PATH.push "#{Dir.pwd}/config"
+    begin
+      load CRED_CONFIG
+    rescue
+    end
+    @config_string = nil
     if ARGV.length > 0
       OptionParser.new do |o|
         o.on('--app_host HOST') { |b|
@@ -78,11 +93,23 @@ class Spinup
         o.on('--verbose', '-v') { |b|
           @verbose = 2
         }
+        o.on('--maxjobs jobs') { |b|
+          @maxjobs = Integer(b)
+        }
         o.on('--dryrun') { |b|
           @dryrun = true
         }
         o.on('--config CONFIG','-c CONFIG') { |b|
           @config = b
+        }
+        o.on('--objective id','-o id') { |b|
+          if @debug
+            h = 'mike-dev.burstorm.com'
+          else
+            h = APP_HOST
+          end
+          cmd = "curl -X GET -k --user '#{APP_KEY}:#{APP_SECRET}' -H \"Content-Type: application/json\" https://#{h}/api/build/#{b}.json 2>/dev/null"
+          @config_string = `#{cmd}`
         }
         o.on('--knifelist') { |b|
           @mode = 'knifelist'
@@ -98,19 +125,15 @@ class Spinup
     end
 
     start = Time.now
-    $LOAD_PATH.push "#{Dir.pwd}/config"
-    begin
-      load CRED_CONFIG
-    rescue
-    end
     begin      
-      if File.exist? @config
+      if @config_string
+        @project = JSON.parse @config_string
+      elsif File.exist? @config
         @project = JSON.parse File.read(@config)
       else
         @project = JSON.parse File.read('config/'+@config)
       end
     rescue Exception => e
-      puts @config
       puts "config load error: #{e.message} #{e.backtrace.join('\n')}"
       exit 1
     end

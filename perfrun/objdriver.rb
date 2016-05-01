@@ -9,6 +9,8 @@ class ObjDriver
   SSHOPTS = "-o LogLevel=quiet -oStrictHostKeyChecking=no"
   CONNECTRETRY = 10
   CONNECTRETRYTMO = 10
+  
+  attr_accessor :maxjobs
 
   def initialize
     @threads = []
@@ -22,6 +24,12 @@ class ObjDriver
     object = opts[:object]
     @tags = opts[:tags]
     @mode = opts[:mode]    
+    if opts[:scopes]
+      @targscopes = []
+      opts[:scopes].each do |s|
+        @targscopes.push scopename(s)
+      end
+    end
     @verbose = opts[:verbose] || 0
     @autodelete = opts[:autodelete]    
     @testconnection = opts[:test_connection]
@@ -31,6 +39,7 @@ class ObjDriver
     @driver = ((object['provider']['cloud_driver'] || 'host').camelize+'Driver').constantize
     # no driver verbose mode in perfrun mode... too noisy 
     @driver.verbose = @verbose - 1
+    @maxjobs = opts[:maxjobs] || maxjobs
     if @mode == 'run'
       @started_at = Time.now
     end
@@ -51,20 +60,9 @@ class ObjDriver
       fetchedactive = true
       object['compute_scopes'].each do |scope|
         break if @aborted
-        flavor = scope['flavor']
+        next if @targscopes and ! @targscopes.include? scopename(scope)
+        flavor = flavordefaults scope
         next if flavor.nil?
-        if scope['id'].nil?
-          log "ignoring null objective for #{@curprovider}"
-          next
-        end
-        flavor['login_as'] = login_as if flavor['login_as'].blank?
-        unless flavor['keyfile'].blank?
-          if ! flavor['keyfile'].include?('/') and ! flavor['keyfile'].include?('..')
-            flavor['keyfile'] = "#{Dir.pwd}/config/#{flavor['keyfile']}"
-          end
-        else
-          flavor['keyfile'] = "#{Dir.pwd}/config/servers.pem"
-        end
         fullname = fullinstname scope, @curlocation
         log "Running #{fullname}..." if @mode == 'run'
         aline = nil
@@ -83,7 +81,7 @@ class ObjDriver
             ip = id = nil
             begin
               if ! active.include? fullname or ! aline or ! aline[:ip]
-                server = start_server fullname, scope, @curlocation, curthread
+                server = start_server fullname, scope, flavor, @curlocation, curthread
                 if server
                   ip = server[:ip]
                   id = server[:id]
@@ -114,7 +112,7 @@ class ObjDriver
           @mutex.synchronize do 
             @threads.push curthread unless curthread[:dead]
           end
-          waitthreads maxjobs
+          waitthreads @maxjobs
         else
           alines.each do |aline|
             if aline[:name] == fullname
@@ -133,12 +131,12 @@ class ObjDriver
         end
       end	     
       waitthreads 0
-      if @mode == 'run'
+      if @mode == 'run' and ! @aborted
         log "Checking for new nodes to be provisioned..."
         object['compute_scopes'].each do |scope|
           break if @aborted
           next if scope[:server].nil?
-          flavor = scope['flavor']
+          flavor = flavordefaults scope
           fullname = fullinstname scope, @curlocation
           unless flavor['provisioning'].blank?
             curthread = {started_at:Time.now, fullname: fullname, inst: scopename(scope), loc: @curlocation, state: 'provisioning'}
@@ -153,7 +151,7 @@ class ObjDriver
                   puts "chef err: #{e.message}"
                 end
               end              
-              log "provisioning done."
+              log "#{fullname}: provisioning done."
               curthread[:state] = "provisioningdone"
               delthread curthread
             }
@@ -229,6 +227,22 @@ class ObjDriver
     scope['details'] || 'compute-'+scope['id']
   end
 
+  def flavordefaults scope
+    flavor = scope['flavor']
+    return nil if flavor.nil?
+    if flavor['flavor'].blank?
+      raise "must specify flavor for #{scopename scope}"
+    end
+    flavor['login_as'] = login_as if flavor['login_as'].blank?
+    unless flavor['keyfile'].blank?
+      if ! flavor['keyfile'].include?('/') and ! flavor['keyfile'].include?('..')
+        flavor['keyfile'] = "#{Dir.pwd}/config/#{flavor['keyfile']}"
+      end
+    else
+      flavor['keyfile'] = "#{Dir.pwd}/config/servers.pem"
+    end
+    flavor
+  end
 
   def perfrun scope, flavor, ip, cretime=nil
     cmd = "(./RunRemote -I '#{scopename(scope)}' -O '#{scope['id']}' -i '#{File.expand_path flavor['keyfile']}' -H '#{@app_host}' -K #{APP_KEY} -S #{APP_SECRET} --create-time #{cretime} #{flavor['login_as']}@#{ip})  >> #{logfile} 2>&1"
@@ -240,8 +254,7 @@ class ObjDriver
     end
   end
 
-  def start_server fullname, scope, locflavor, curthread
-    flavor = scope['flavor']
+  def start_server fullname, scope, flavor, locflavor, curthread
     log "creating #{fullname}..."
     curthread[:state] = 'starting'
     server = create_server(fullname, scope, flavor, locflavor)

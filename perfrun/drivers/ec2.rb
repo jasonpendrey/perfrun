@@ -26,18 +26,6 @@ class Ec2Driver < Provider
       puts "must specify keyname"
       return nil
     end
-    if flavor['flavor'].blank?
-      puts "must specify flavor"
-      return nil
-    end
-    if flavor['login_as'].blank?
-      puts "must specify login_as"
-      return nil
-    end
-    if flavor['keyfile'].blank?
-      puts "must specify keyfile"
-      return nil
-    end
     image = flavor['imageid']
     image= DEFIMAGES[loc] if image.blank?
     server = self._create_server name, flavor['flavor'], loc, flavor['keyname'], image, false
