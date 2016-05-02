@@ -35,10 +35,8 @@ class ObjDriver
     @testconnection = opts[:test_connection]
     @curprovider = object['provider']['name']
     @curlocation = object['provider']['location_flavor'] || object['provider']['address']
-    require_relative 'drivers/'+(object['provider']['cloud_driver'] || 'host')
-    @driver = ((object['provider']['cloud_driver'] || 'host').camelize+'Driver').constantize
-    # no driver verbose mode in perfrun mode... too noisy 
-    @driver.verbose = @verbose - 1
+    provider = object['provider']['cloud_driver']
+    set_driver provider
     @maxjobs = opts[:maxjobs] || maxjobs
     if @mode == 'run'
       @started_at = Time.now
@@ -49,20 +47,27 @@ class ObjDriver
     @mutex = Mutex.new
     watchdog
     log "Perfrun for #{object['name']}@#{@curprovider}/#{@curlocation} to #{@app_host}" if @mode == 'run'
+    @actives = {}
     begin
-      active = {}
-      alines = []
-      get_active @curlocation, @mode != 'run' do |id, name, ip, state|
-        active[name] = name
-        alines.push({id:id, name:name, ip:ip, state: state})
-      end
-      active = active.values
-      fetchedactive = true
       object['compute_scopes'].each do |scope|
         break if @aborted
         next if @targscopes and ! @targscopes.include? scopename(scope)
         flavor = flavordefaults scope
         next if flavor.nil?
+        set_driver flavor['provider'] if flavor['provider']
+        if @actives[@curprovider].nil?          
+          active = {}
+          alines = []
+          get_active @curlocation, @mode != 'run' do |id, name, ip, state|
+            active[name] = name
+            alines.push({id:id, name:name, ip:ip, state: state})
+          end
+          active = active.values
+          @actives[@curprovider] = {active: active, alines: alines}
+        else
+          alines = @actives[@curprovider][:alines]
+          active = @actives[@curprovider][:active]
+        end
         fullname = fullinstname scope, @curlocation
         log "Running #{fullname}..." if @mode == 'run'
         aline = nil
@@ -135,7 +140,14 @@ class ObjDriver
         log "Checking for new nodes to be provisioned..."
         object['compute_scopes'].each do |scope|
           break if @aborted
-          next if scope[:server].nil?
+          if scope[:server]
+            host = scope[:server][:ip]
+          elsif scope['flavor']
+            host = scope['flavor']['fqdn']
+          else
+            host = nil
+          end
+          next if host.blank?
           flavor = flavordefaults scope
           fullname = fullinstname scope, @curlocation
           unless flavor['provisioning'].blank?
@@ -146,9 +158,10 @@ class ObjDriver
               case flavor['provisioning']
               when 'chef'
                 begin 
-                  ChefDriver.bootstrap(scope[:server][:ip], fullname, provisioning_tags(scope), flavor, @curlocation, @driver.config(@curlocation) )
+                  ChefDriver.bootstrap(host, fullname, provisioning_tags(scope), flavor, @curlocation, @driver.config(@curlocation) )
                 rescue  Exception => e
                   puts "chef err: #{e.message}"
+                  puts e.backtrace.join "\n"
                 end
               end              
               log "#{fullname}: provisioning done."
@@ -202,6 +215,14 @@ class ObjDriver
     @verbose = n
   end
 
+  def set_driver prov
+    prov = 'host' if prov.nil?
+    require_relative 'drivers/'+prov
+    @driver = (prov.camelize+'Driver').constantize
+    @driver.verbose = @verbose - 1
+    @curprovider = prov
+  end
+
   def waitthreads maxpending
     log "\033[1mStart waiting for #{@threads.length} threads: #{@threads.inspect}\033[m" if @threads.length > maxpending
     
@@ -230,7 +251,7 @@ class ObjDriver
   def flavordefaults scope
     flavor = scope['flavor']
     return nil if flavor.nil?
-    if flavor['flavor'].blank?
+    if flavor['flavor'].blank? and flavor['provider'] != 'host'
       raise "must specify flavor for #{scopename scope}"
     end
     flavor['login_as'] = login_as if flavor['login_as'].blank?
@@ -405,7 +426,7 @@ class ObjDriver
 
   def fullinstname scope, locflavor
     rv = scopename(scope)
-    if @autodelete
+    if @autodelete and @curprovider != 'host'
       rv += '-'+(locflavor || 'no-location')
     end
     rv.gsub(/[ \/]/, '-')

@@ -8,11 +8,12 @@ class HostDriver < Provider
     # XXX this is something of a hack since there isn't a List for specified hosts
     $objs.each do |obj|
       driver = obj['provider']['cloud_driver'] || 'host'
-      next if driver != 'host'
       obj['compute_scopes'].each do |scope|
-        name = fullinstname scope, location
         flavor = scope['flavor']
         next if flavor.nil?
+        driver = flavor['provider'] if flavor['provider']
+        next if driver != 'host'
+        name = fullinstname scope, location
         next if flavor['fqdn'].nil? or flavor['fqdn'].empty?
         yield scope['details'], name, flavor['fqdn'], 'active'
       end
@@ -21,13 +22,12 @@ class HostDriver < Provider
 
   def self.fullinstname scope, locflavor
     scopename = scope['details'] || 'compute-'+scope['id']
-    rv = scopename+'-'+(locflavor || 'no-location')
-    rv.gsub(/[ \/]/, '-')
+    scopename.gsub(/[ \/]/, '-')
   end
 
   def self.create_server name, scope, flavor, location, provtags
     # nothing to do
-    return {id:name, ip:name}
+    return {id: flavor['fqdn'], ip: flavor['fqdn']}
   end
 
   # @override

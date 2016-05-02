@@ -16,18 +16,21 @@ class Spinup
   
   def self.oneoffrun     
     @objs.each do |obj|
-      next if obj['compute_scopes'].length == 0
+      next if obj['compute_scopes'].length == 0      
+      found = true
       if ARGV.length > 0
+        found = false
         scopes = []
         obj['compute_scopes'].each do |scope|
           if ARGV.include? scope['details']
             scopes.push scope 
+            found = true
           end
         end
       else
         scopes = nil
       end
-      runone obj, scopes
+      runone obj, scopes if found
     end
     waitthreads
   end
@@ -102,7 +105,7 @@ class Spinup
         o.on('--config CONFIG','-c CONFIG') { |b|
           @config = b
         }
-        o.on('--objective id','-o id') { |b|
+        o.on('--buildspec id', '-s id') { |b|
           if @debug
             h = 'mike-dev.burstorm.com'
           else
@@ -110,6 +113,17 @@ class Spinup
           end
           cmd = "curl -X GET -k --user '#{APP_KEY}:#{APP_SECRET}' -H \"Content-Type: application/json\" https://#{h}/api/build/#{b}.json 2>/dev/null"
           @config_string = `#{cmd}`
+          @config = "Build Spec #{b}"
+        }
+        o.on('--build id','-b id') { |b|
+          if @debug
+            h = 'mike-dev.burstorm.com'
+          else
+            h = APP_HOST
+          end
+          cmd = "curl -X GET -k --user '#{APP_KEY}:#{APP_SECRET}' -H \"Content-Type: application/json\" https://#{h}/api/builds/#{b}.json 2>/dev/null"
+          @config_string = `#{cmd}`
+          @config = "Build #{b}"
         }
         o.on('--knifelist') { |b|
           @mode = 'knifelist'
@@ -153,6 +167,7 @@ class Spinup
         exit 1
       end
     end
+    $objs = @objs
     @tags = @project['project_tags']
     oneoffrun
     puts "<b>Spinup finished after #{((Time.now-start)/60).round(1)} minutes</b>"
