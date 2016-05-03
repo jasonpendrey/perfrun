@@ -114,7 +114,9 @@ class PerfRun
         curthread[:pd] = pd = ObjDriver.new
         pd.verbose = @verbose
         pd.run opts do |server|
-          pd.perfrun server[:scope], server[:flavor], server[:ip], server[:cretime] if @mode == 'run'
+          if @mode == 'run' and server[:action] == 'ready'
+            pd.perfrun server[:scope], server[:flavor], server[:ip], server[:runtime] 
+          end
         end
         delthread curthread
       }
@@ -155,8 +157,8 @@ class PerfRun
         o.on('--config CONFIG') { |b|
           @config = b
         }
-        o.on('--knifelist') { |b|
-          @mode = 'knifelist'
+        o.on('--fulllist') { |b|
+          @mode = 'fulllist'
         }
         o.on('--kill') { |b|
           killdaemon false
@@ -189,7 +191,7 @@ class PerfRun
     begin
       @project = JSON.parse File.read(@config)
     rescue Exception => e
-      puts "JSON parse error: #{e.message} #{e.backtrace.join('\n')}"
+      puts "JSON parse error: #{e.message}}"
       exit 1
     end
     nstart = 0

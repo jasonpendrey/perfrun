@@ -35,27 +35,24 @@ class ObjDriver
     @testconnection = opts[:test_connection]
     @curprovider = object['provider']['name']
     @curlocation = object['provider']['location_flavor'] || object['provider']['address']
-    provider = object['provider']['cloud_driver']
-    set_driver provider
-    @maxjobs = opts[:maxjobs] || maxjobs
-    if @mode == 'run'
-      @started_at = Time.now
-    end
+    @started_at = Time.now if @mode == 'run'
     @app_host = opts[:app_host] if opts[:app_host]
     @errorinsts = [] if @mode == 'run'
     @threads = []
     @mutex = Mutex.new
     watchdog
-    log "Perfrun for #{object['name']}@#{@curprovider}/#{@curlocation} to #{@app_host}" if @mode == 'run'
+    log "Running #{object['name']}@#{@curprovider}/#{@curlocation} to #{@app_host}" if @mode == 'run'
     @actives = {}
     begin
       object['compute_scopes'].each do |scope|
         break if @aborted
         next if @targscopes and ! @targscopes.include? scopename(scope)
+        set_driver object, scope
         flavor = flavordefaults scope
         next if flavor.nil?
-        set_driver flavor['provider'] if flavor['provider']
-        if @actives[@curprovider].nil?          
+        @maxjobs = opts[:maxjobs] || maxjobs
+        provloc = @curprovider+@curlocation
+        if @actives[provloc].nil?          
           active = {}
           alines = []
           get_active @curlocation, @mode != 'run' do |id, name, ip, state|
@@ -63,12 +60,12 @@ class ObjDriver
             alines.push({id:id, name:name, ip:ip, state: state})
           end
           active = active.values
-          @actives[@curprovider] = {active: active, alines: alines}
+          @actives[provloc] = {active: active, alines: alines}
         else
-          alines = @actives[@curprovider][:alines]
-          active = @actives[@curprovider][:active]
+          alines = @actives[provloc][:alines]
+          active = @actives[provloc][:active]
         end
-        fullname = fullinstname scope, @curlocation
+        fullname = fullinstname scope
         log "Running #{fullname}..." if @mode == 'run'
         aline = nil
         alines.each do |a|
@@ -83,29 +80,27 @@ class ObjDriver
           curthread[:thread] = Thread.new {
             curthread[:thread] = Thread.current
             start =  Time.now
-            ip = id = nil
             begin
               if ! active.include? fullname or ! aline or ! aline[:ip]
                 server = start_server fullname, scope, flavor, @curlocation, curthread
-                if server
-                  ip = server[:ip]
-                  id = server[:id]
-                  curthread[:created] = true
-                  scope[:server] = server
+                if ! server
+                  delthread curthread        
+                  return
                 end
+                server[:created_at] = Time.now
               else
-                ip = aline[:ip]
-                id = aline[:id]
-                ssh_remove_ip ip
-                curthread[:created] = false
+                server = aline
+                server[:created_at] = nil
+                ssh_remove_ip server[:ip]
               end
-              if ip
+              scope[:server] = server
+              if server[:ip]
                 curthread[:state] = 'running'
-                block.call({name: fullname, scope: scope, flavor: flavor, id: id, ip: ip, cretime: Time.now-start}) if block
-                if curthread[:created] and @autodelete
+                block.call({action: 'running', name: fullname, scope: scope, flavor: flavor, id: server[:id], ip: server[:ip], runtime: Time.now-curthread[:started_at]}) if block
+                if server[:created_at] and @autodelete
                   log "#{fullname}: deleting..."
                   curthread[:state] = 'deleting'
-                  delete_server(fullname, id, @curlocation, flavor)
+                  delete_server(fullname, server[:id], @curlocation, flavor)
                 end
               end
             rescue Exception => e
@@ -120,37 +115,34 @@ class ObjDriver
           waitthreads @maxjobs
         else
           alines.each do |aline|
-            if aline[:name] == fullname
+            if @mode == 'fulllist'
+              puts sprintf("#{@curlocation}\t%-20s\t#{aline[:id]}\t#{aline[:state]}", aline[:name])
+            elsif aline[:name] == fullname
               if @mode == 'delete'
-                # XXX want to use threads here, but need to keep track of them to wait before exit
+                start = Time.now
                 puts delete_server(fullname, aline[:id], @curlocation, flavor)
+                block.call({action: 'deleted', name: fullname, scope: scope, flavor: flavor, id: aline[:id], ip: aline[:ip], runtime: Time.now-start}) if block
               elsif @mode == 'list'
                 puts sprintf("#{@curlocation}\t%-20s\t#{aline[:id]}\t#{aline[:state]}", fullname)
               end
             end
-            if @mode == 'knifelist'
-              puts sprintf("#{@curlocation}\t%-20s\t#{aline[:id]}\t#{aline[:state]}", aline[:name])
-            end
           end
-          return if @mode == 'knifelist'
+          return if @mode == 'fulllist'
         end
       end	     
       waitthreads 0
       if @mode == 'run' and ! @aborted
         log "Checking for new nodes to be provisioned..."
         object['compute_scopes'].each do |scope|
-          break if @aborted
-          if scope[:server]
-            host = scope[:server][:ip]
-          elsif scope['flavor']
-            host = scope['flavor']['fqdn']
-          else
-            host = nil
-          end
+          break if @aborted          
+          set_driver object, scope
+          next unless scope[:server]
+          host = scope[:server][:ip]
           next if host.blank?
+          id = scope[:server][:id]
           flavor = flavordefaults scope
-          fullname = fullinstname scope, @curlocation
-          unless flavor['provisioning'].blank?
+          fullname = fullinstname scope
+          if ! flavor['provisioning'].blank? and (@curprovider == 'host' or scope[:server][:created_at])
             curthread = {started_at:Time.now, fullname: fullname, inst: scopename(scope), loc: @curlocation, state: 'provisioning'}
             curthread[:thread] = Thread.new {
               curthread[:thread] = Thread.current
@@ -166,6 +158,7 @@ class ObjDriver
               end              
               log "#{fullname}: provisioning done."
               curthread[:state] = "provisioningdone"
+              block.call({action: 'ready', name: fullname, scope: scope, flavor: flavor, id: id, ip: host, runtime: Time.now-curthread[:started_at]}) if block
               delthread curthread
             }
             @mutex.synchronize do 
@@ -177,6 +170,7 @@ class ObjDriver
       end
 
     rescue Exception => e
+      puts "ObjDriver: #{e.class} #{e.message} ***"      
       log "\n\n**ObjDriver: #{e.class} #{e.message} ***"      
       log e.backtrace.join "\n" if e.class != Interrupt
       log "   threads: #{@threads.inspect}"
@@ -189,10 +183,10 @@ class ObjDriver
         @errorinsts.uniq!
         log "instances that didn't complete: #{@errorinsts.join(',')}"
       end
-      log "\033[1mPerfrun #{@curprovider}/#{@curlocation} done at #{Time.now}; #{((Time.now-@started_at)/60).round} minutes\033[0m"
+      log "\033[1m#{@curprovider}/#{@curlocation} done at #{Time.now}; #{((Time.now-@started_at)/60).round} minutes\033[0m"
     else
       killall if @aborted
-      log "\033[1mPerfrun #{@curprovider}/#{@curlocation} #{@aborted ? 'aborted' : 'done'}\033[0m"
+      log "\033[1m#{@curprovider}/#{@curlocation} #{@aborted ? 'aborted' : 'done'}\033[0m"
     end
   end
 
@@ -215,7 +209,12 @@ class ObjDriver
     @verbose = n
   end
 
-  def set_driver prov
+  def set_driver object, scope
+    if scope['flavor']['provider']
+      prov = scope['flavor']['provider'] 
+    else
+      prov = object['provider']['cloud_driver']
+    end    
     prov = 'host' if prov.nil?
     require_relative 'drivers/'+prov
     @driver = (prov.camelize+'Driver').constantize
@@ -424,10 +423,10 @@ class ObjDriver
     @driver.get_active location, all, &block
   end
 
-  def fullinstname scope, locflavor
+  def fullinstname scope
     rv = scopename(scope)
     if @autodelete and @curprovider != 'host'
-      rv += '-'+(locflavor || 'no-location')
+      rv += '-'+(@curlocation || 'no-location')
     end
     rv.gsub(/[ \/]/, '-')
   end

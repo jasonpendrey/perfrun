@@ -53,7 +53,7 @@ class RackspaceDriver < Provider
     nretry = 30
     while nretry > 0 do
       sleep 10
-      s = self.fetch_server id, loc
+      s = self.fetch_server rv[:id], loc
       if s.nil? or ! s['server']
         puts "bad fetch_server: #{s}"
         return nil

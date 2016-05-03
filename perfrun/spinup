@@ -57,8 +57,12 @@ class Spinup
           if (@mode == 'run')
             puts "#{server[:id]}: #{server[:name]} #{server[:ip]}"
             require_relative 'drivers/rackspace'
-            RackspaceDriver.del_dns "burstorm.com", server[:name]
-            RackspaceDriver.add_dns "burstorm.com", server[:name], server[:ip]
+            if server[:action] == 'running'
+              RackspaceDriver.del_dns "burstorm.com", server[:name]
+              RackspaceDriver.add_dns "burstorm.com", server[:name], server[:ip]
+            elsif server[:action] == 'deleted'
+              RackspaceDriver.del_dns "burstorm.com", server[:name]
+            end
           end
         end
         delthread curthread
@@ -125,8 +129,8 @@ class Spinup
           @config_string = `#{cmd}`
           @config = "Build #{b}"
         }
-        o.on('--knifelist') { |b|
-          @mode = 'knifelist'
+        o.on('--fulllist') { |b|
+          @mode = 'fulllist'
         }
         o.on('--debug') { |b|
           @debug = true
@@ -144,11 +148,13 @@ class Spinup
         @project = JSON.parse @config_string
       elsif File.exist? @config
         @project = JSON.parse File.read(@config)
-      else
+      elsif File.exist? 'config/'+@config
         @project = JSON.parse File.read('config/'+@config)
+      else
+        raise 'no such file: '+@config
       end
     rescue Exception => e
-      puts "config load error: #{e.message} #{e.backtrace.join('\n')}"
+      puts "config load error: #{e.message}"
       exit 1
     end
     case @project['ptype']
