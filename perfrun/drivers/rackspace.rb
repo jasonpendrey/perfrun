@@ -114,7 +114,7 @@ class RackspaceDriver < Provider
     if @authlocs[loc]
       return @authlocs[loc]
     end
-    cmd = "curl -X 'POST' -s #{IDENTURL} -d '{\"auth\":{\"RAX-KSKEY:apiKeyCredentials\": #{get_keys(loc).to_json}}}' -H \"Content-Type: application/json\""
+    cmd = "curl -X 'POST' -s #{IDENTURL} -d '{\"auth\":{\"RAX-KSKEY:apiKeyCredentials\": #{JSON.generate(get_keys(loc))}}}' -H \"Content-Type: application/json\""
     authjs = `#{cmd}`
     # XXX
     begin
@@ -200,7 +200,7 @@ class RackspaceDriver < Provider
                         ttl: ttl
                       }]
     }
-    cmd = "#{curlauth('POST', "DFW", :dnsendpoint)}/domains/#{id}/records -d '#{req.to_json}'  2>/dev/null"
+    cmd = "#{curlauth('POST', "DFW", :dnsendpoint)}/domains/#{id}/records -d '#{JSON.generate(req)}'  2>/dev/null"
     execcmd cmd
   end
 
@@ -249,7 +249,7 @@ class RackspaceDriver < Provider
         size: 50
       }
     }
-    cmd = "#{curlauth('POST', loc, :storageendpoint)}/volumes -d '#{req.to_json}'  2>/dev/null"
+    cmd = "#{curlauth('POST', loc, :storageendpoint)}/volumes -d '#{JSON.generate(req)}'  2>/dev/null"
     rv = execcmd cmd
     uuid = rv['volume']['id']
     puts "uuid of new volume: #{uuid}"
@@ -327,7 +327,7 @@ class RackspaceDriver < Provider
                 { uuid: "11111111-1111-1111-1111-111111111111" }
                ]
     req[:server][:networks] = networks
-    cmd = "#{curlauth('POST', loc, :serverendpoint)}/servers -d '#{req.to_json}' 2>/dev/null"
+    cmd = "#{curlauth('POST', loc, :serverendpoint)}/servers -d '#{JSON.generate(req)}' 2>/dev/null"
     execcmd cmd
   end
 

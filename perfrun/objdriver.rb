@@ -210,7 +210,7 @@ class ObjDriver
   end
 
   def set_driver object, scope
-    if scope['flavor']['provider']
+    if scope['flavor'] and scope['flavor']['provider']
       prov = scope['flavor']['provider'] 
     else
       prov = object['provider']['cloud_driver']
@@ -250,9 +250,9 @@ class ObjDriver
   def flavordefaults scope
     flavor = scope['flavor']
     return nil if flavor.nil?
-    if flavor['flavor'].blank? and flavor['provider'] != 'host'
-      raise "must specify flavor for #{scopename scope}"
-    end
+#    if flavor['flavor'].blank? and flavor['provider'] != 'host'
+#      raise "must specify flavor for #{scopename scope}"
+#    end
     flavor['login_as'] = login_as if flavor['login_as'].blank?
     unless flavor['keyfile'].blank?
       if ! flavor['keyfile'].include?('/') and ! flavor['keyfile'].include?('..')
