@@ -164,6 +164,8 @@ class ObjDriver
             @mutex.synchronize do 
               @threads.push curthread unless curthread[:dead]
             end
+          else
+            block.call({action: 'ready', name: fullname, scope: scope, flavor: flavor, id: id, ip: host, runtime: 0}) if block
           end
         end
         waitthreads 0
@@ -247,22 +249,6 @@ class ObjDriver
     scope['details'] || 'compute-'+scope['id']
   end
 
-  def flavordefaults scope
-    flavor = scope['flavor']
-    return nil if flavor.nil?
-#    if flavor['flavor'].blank? and flavor['provider'] != 'host'
-#      raise "must specify flavor for #{scopename scope}"
-#    end
-    flavor['login_as'] = login_as if flavor['login_as'].blank?
-    unless flavor['keyfile'].blank?
-      if ! flavor['keyfile'].include?('/') and ! flavor['keyfile'].include?('..')
-        flavor['keyfile'] = "#{Dir.pwd}/config/#{flavor['keyfile']}"
-      end
-    else
-      flavor['keyfile'] = "#{Dir.pwd}/config/servers.pem"
-    end
-    flavor
-  end
 
   def perfrun scope, flavor, ip, cretime=nil
     cmd = "(./RunRemote -I '#{scopename(scope)}' -O '#{scope['id']}' -i '#{File.expand_path flavor['keyfile']}' -H '#{@app_host}' -K #{APP_KEY} -S #{APP_SECRET} --create-time #{cretime} #{flavor['login_as']}@#{ip})  >> #{logfile} 2>&1"
@@ -423,6 +409,10 @@ class ObjDriver
     @driver.get_active location, all, &block
   end
 
+  def flavordefaults scope
+    @driver.flavordefaults scope
+  end
+
   def fullinstname scope
     rv = scopename(scope)
     if @autodelete and @curprovider != 'host'
@@ -438,6 +428,7 @@ class ObjDriver
   def login_as
     @driver::LOGIN_AS || 'root'
   end
+
 
   def log msg
     begin

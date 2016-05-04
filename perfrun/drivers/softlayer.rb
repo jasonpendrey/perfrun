@@ -116,4 +116,19 @@ class SoftlayerDriver < Provider
     end
   end
 
+  # @override
+  def flavordefaults scope
+    flavor = scope['flavor']
+    return nil if flavor.nil?
+    flavor['login_as'] = LOGIN_AS #if flavor['login_as'].blank?
+    unless flavor['keyfile'].blank?
+      if ! flavor['keyfile'].include?('/') and ! flavor['keyfile'].include?('..')
+        flavor['keyfile'] = "#{Dir.pwd}/config/#{flavor['keyfile']}"
+      end
+    else
+      flavor['keyfile'] = "#{Dir.pwd}/config/servers.pem"
+    end
+    flavor
+  end
+
 end

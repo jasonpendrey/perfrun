@@ -55,7 +55,7 @@ class Spinup
         pd.run opts do |server|
           # XXX need to rationalize this to call an external hook
           if (@mode == 'run')
-            puts "#{server[:id]}: #{server[:name]} #{server[:ip]}"
+            puts "#{server[:id]}: #{server[:action]} #{server[:name]} #{server[:ip]}"
             require_relative 'drivers/rackspace'
             if server[:action] == 'running'
               RackspaceDriver.del_dns "burstorm.com", server[:name]
@@ -117,7 +117,7 @@ class Spinup
           end
           cmd = "curl -X GET -k --user '#{APP_KEY}:#{APP_SECRET}' -H \"Content-Type: application/json\" https://#{h}/api/build/#{b}.json 2>/dev/null"
           @config_string = `#{cmd}`
-          @config = "Build Spec #{b}"
+          @config = "build spec #{b}"
         }
         o.on('--build id','-b id') { |b|
           if @debug
@@ -125,9 +125,29 @@ class Spinup
           else
             h = APP_HOST
           end
-          cmd = "curl -X GET -k --user '#{APP_KEY}:#{APP_SECRET}' -H \"Content-Type: application/json\" https://#{h}/api/builds/#{b}.json 2>/dev/null"
+          begin
+            id = Integer b
+          rescue
+            cmd = "curl -X GET -k --user '#{APP_KEY}:#{APP_SECRET}' -H \"Content-Type: application/json\" https://#{h}/api/projects.json?for_select=true 2>/dev/null"
+            jproj = `#{cmd}`
+            begin
+              projs = JSON.parse jproj
+            rescue Exception => e
+              raise "bad json: #{e.message}"
+            end
+            id = nil
+            projs.each do |proj|
+              if proj['name'] == b and proj['ptype'] == 'quote'
+                id = proj['id']
+                break
+              end
+            end
+            
+          end
+          raise "can't find #{b}" if id.nil?
+          cmd = "curl -X GET -k --user '#{APP_KEY}:#{APP_SECRET}' -H \"Content-Type: application/json\" https://#{h}/api/builds/#{id}.json 2>/dev/null"
           @config_string = `#{cmd}`
-          @config = "Build #{b}"
+          @config = "build #{b}"
         }
         o.on('--fulllist') { |b|
           @mode = 'fulllist'
