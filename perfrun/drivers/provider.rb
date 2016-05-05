@@ -64,4 +64,16 @@ class Provider
     end
   end
 
+  def self.log msg
+    begin
+      File.write logfile, msg+"\n", mode: 'a'
+    rescue
+    end
+  end
+
+  def self.logfile
+    "logs/#{self::CHEF_PROVIDER}.log"
+  end
+
+
 end

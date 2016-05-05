@@ -186,6 +186,7 @@ class ObjDriver
     end
     @watchdog.kill if @watchdog
     if @mode == 'run'
+      waitthreads
       cleanup
       if @errorinsts.length > 0
         @errorinsts.uniq!
@@ -235,6 +236,7 @@ class ObjDriver
     log "\033[1mStart waiting for #{@threads.length} threads: #{@threads.inspect}\033[m" if @threads.length > maxpending
     
     while @threads.length >= maxpending
+      return if @aborted
       @mutex.synchronize do 
         @threads.each_with_index do |t, idx|
           if t[:dead] or ! t[:thread].status

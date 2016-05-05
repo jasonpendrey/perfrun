@@ -298,7 +298,7 @@ class PerfRun
       end      
     rescue Exception => e
       puts "\n\n***Perfrun: cleaning up because of #{e.inspect} ***"
-      puts "#{e.backtrace.join "\n"}" if @verbose > 0
+      puts "#{e.backtrace.join "\n"}" if @verbose > 0 and e.class != Interrupt
       @threads.each do |t|
         t[:pd].abort if t[:pd] 
       end

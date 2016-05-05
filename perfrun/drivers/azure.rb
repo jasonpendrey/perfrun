@@ -15,8 +15,8 @@ class AzureDriver < Provider
     s = get_auth location
     s.servers.each do |server|
       # XXX: fricking azure doesn't seem to have which datacetner it's located in... location doesn't return anything
-      if server.state == 'ready' or all      
-        yield server.vm_name, server.vm_name, server.public_ip_address, server.deployment_status
+      if server.state == 'Running' or all      
+        yield server.vm_name, server.vm_name, server.public_ip_address, server.state
       end
     end
   end	     
@@ -38,7 +38,6 @@ class AzureDriver < Provider
       sleep 5
     end
     rv = {}
-puts ip=#{server.ipaddress}"
     rv[:ip] = server.ipaddress    
     rv[:id] = server.vm_name
     rv
@@ -92,6 +91,19 @@ puts ip=#{server.ipaddress}"
     server = s.servers.create(:vm_name => name, :image => image, :location => loc, :vm_size => instance, 
                               :private_key_file => keyfile, :vm_user => 'ubuntu', :tcp_endpoints => burfw)
     server
+  end
+
+  def self._delete_server id, loc
+    begin
+      server = self.fetch_server id, loc
+      return if server.state != 'Running'
+      if server
+        server.destroy 
+      end
+    rescue Exception => e
+      log "e=#{e.message}"
+      #puts e.backtrace.join "\n"
+    end
   end
 
 end
