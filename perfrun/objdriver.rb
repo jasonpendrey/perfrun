@@ -94,6 +94,7 @@ class ObjDriver
                 ssh_remove_ip server[:ip]
               end
               scope[:server] = server
+              server[:started_at] = curthread[:started_at]
               if server[:ip]
                 curthread[:state] = 'running'
                 block.call({action: 'running', name: fullname, scope: scope, flavor: flavor, id: server[:id], ip: server[:ip], runtime: Time.now-curthread[:started_at]}) if block
@@ -106,7 +107,7 @@ class ObjDriver
             rescue Exception => e
               log "#{fullname} #{curthread[:state]}: caught error with server start: #{e.message}" 
               log e.backtrace.join "\n"
-            end            
+            end
             delthread curthread        
           }
           @mutex.synchronize do 
@@ -131,46 +132,50 @@ class ObjDriver
         end
       end	     
       waitthreads 0
+      # XXX need to deal with maxjobs...
       if @mode == 'run' and ! @aborted
         log "Checking for new nodes to be provisioned..."
         object['compute_scopes'].each do |scope|
           break if @aborted          
           set_driver object, scope
-          next unless scope[:server]
-          host = scope[:server][:ip]
+          server = scope[:server]
+          next unless server
+          host = server[:ip]
           next if host.blank?
-          id = scope[:server][:id]
+          id = server[:id]
           flavor = flavordefaults scope
           fullname = fullinstname scope
-          if ! flavor['provisioning'].blank? and (@curprovider == 'host' or scope[:server][:created_at])
-            curthread = {started_at:Time.now, fullname: fullname, inst: scopename(scope), loc: @curlocation, state: 'provisioning'}
-            curthread[:thread] = Thread.new {
+          curthread = {started_at: server[:started_at], fullname: fullname, inst: scopename(scope), loc: @curlocation, state: 'provisioning'}
+          curthread[:thread] = Thread.new {
+            begin
               curthread[:thread] = Thread.current
-              log "Provisioning #{fullname} with #{flavor['provisioning']}"
-              case flavor['provisioning']
-              when 'chef'
-                begin 
-                  ChefDriver.bootstrap(host, fullname, provisioning_tags(scope), flavor, @curlocation, @driver.config(@curlocation) )
-                rescue  Exception => e
-                  puts "chef err: #{e.message}"
-                  puts e.backtrace.join "\n"
+              if ! flavor['provisioning'].blank? and (@curprovider == 'host' or server[:created_at])
+                log "Provisioning #{fullname} with #{flavor['provisioning']}"
+                case flavor['provisioning']
+                when 'chef'
+                  begin 
+                    ChefDriver.bootstrap(host, fullname, provisioning_tags(scope), flavor, @curlocation, @driver.config(@curlocation) )
+                  rescue  Exception => e
+                    puts "chef err: #{e.message}"
+                    puts e.backtrace.join "\n"
+                  end
                 end
-              end              
+              end
               log "#{fullname}: provisioning done."
-              curthread[:state] = "provisioningdone"
+              curthread[:state] = "ready"
               block.call({action: 'ready', name: fullname, scope: scope, flavor: flavor, id: id, ip: host, runtime: Time.now-curthread[:started_at]}) if block
               delthread curthread
-            }
-            @mutex.synchronize do 
-              @threads.push curthread unless curthread[:dead]
+            rescue Exception => e
+              puts "provisioning error: #{e.message}"
+              puts e.backtrace.join "\n"
             end
-          else
-            block.call({action: 'ready', name: fullname, scope: scope, flavor: flavor, id: id, ip: host, runtime: 0}) if block
-          end
+          }
+          @mutex.synchronize do 
+            @threads.push curthread unless curthread[:dead]
+          end            
         end
         waitthreads 0
       end
-
     rescue Exception => e
       puts "ObjDriver: #{e.class} #{e.message} ***"      
       log "\n\n**ObjDriver: #{e.class} #{e.message} ***"      

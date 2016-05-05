@@ -114,7 +114,7 @@ class PerfRun
         curthread[:pd] = pd = ObjDriver.new
         pd.verbose = @verbose
         pd.run opts do |server|
-          if @mode == 'run' and server[:action] == 'ready'
+          if @mode == 'run' and server[:action] == 'running'
             pd.perfrun server[:scope], server[:flavor], server[:ip], server[:runtime] 
           end
         end
