@@ -117,7 +117,7 @@ class SoftlayerDriver < Provider
   end
 
   # @override
-  def flavordefaults scope
+  def self.flavordefaults scope
     flavor = scope['flavor']
     return nil if flavor.nil?
     flavor['login_as'] = LOGIN_AS #if flavor['login_as'].blank?
