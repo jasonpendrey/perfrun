@@ -29,10 +29,13 @@ class AzureDriver < Provider
       puts "can't create #{name}: #{server}"
       return nil
     end
-    server.wait_for { 
+    nretry = 60
+    while nretry >= 0 do 
       s = self.fetch_server server.vm_name, loc
-      s.ready? 
-    }
+      break if s.ready? 
+      nretry -= 1
+      sleep 5
+    end
     rv = {}
     rv[:ip] = server.ipaddress    
     rv[:id] = server.vm_name
