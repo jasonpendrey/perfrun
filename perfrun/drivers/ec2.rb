@@ -3,7 +3,7 @@ require 'fog'
 class Ec2Driver < Provider
   PROVIDER='Amazon/AWS'
   CHEF_PROVIDER='ec2'
-  MAXJOBS = 1
+  MAXJOBS = 2
   PROVIDER_ID = 67
   LOGIN_AS = 'ubuntu'
   DEFIMAGES = {'us-east-1' => 'ami-9a562df2', 'us-west-1' => 'ami-057f9d41', 'us-west-2' => 'ami-51526761',

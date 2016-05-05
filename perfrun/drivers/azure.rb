@@ -29,14 +29,16 @@ class AzureDriver < Provider
       puts "can't create #{name}: #{server}"
       return nil
     end
+    # can't use wait_for because ms changed server.get to require two parameters which causes wait_for to puke
     nretry = 60
     while nretry >= 0 do 
-      s = self.fetch_server server.vm_name, loc
-      break if s.ready? 
+      server = self.fetch_server server.vm_name, loc
+      break if server.ready? 
       nretry -= 1
       sleep 5
     end
     rv = {}
+puts ip=#{server.ipaddress}"
     rv[:ip] = server.ipaddress    
     rv[:id] = server.vm_name
     rv

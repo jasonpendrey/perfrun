@@ -7,7 +7,7 @@ require_relative 'drivers/chef'
 class ObjDriver
   WATCHDOGTMO = 30*60       # for running
   SSHOPTS = "-o LogLevel=quiet -oStrictHostKeyChecking=no"
-  CONNECTRETRY = 10
+  CONNECTRETRY = 20
   CONNECTRETRYTMO = 10
   
   attr_accessor :maxjobs
@@ -131,7 +131,7 @@ class ObjDriver
           return if @mode == 'fulllist'
         end
       end	     
-      waitthreads 0
+      waitthreads
       # XXX need to deal with maxjobs...
       if @mode == 'run' and ! @aborted
         log "Checking for new nodes to be provisioned..."
@@ -174,10 +174,11 @@ class ObjDriver
             @threads.push curthread unless curthread[:dead]
           end            
         end
-        waitthreads 0
+        waitthreads
       end
     rescue Exception => e
       puts "ObjDriver: #{e.class} #{e.message} ***"      
+      puts e.backtrace.join "\n" if e.class != Interrupt
       log "\n\n**ObjDriver: #{e.class} #{e.message} ***"      
       log e.backtrace.join "\n" if e.class != Interrupt
       log "   threads: #{@threads.inspect}"
@@ -229,10 +230,11 @@ class ObjDriver
     @curprovider = prov
   end
 
-  def waitthreads maxpending
+  def waitthreads maxpending=nil
+    maxpending = 1 if maxpending.nil?
     log "\033[1mStart waiting for #{@threads.length} threads: #{@threads.inspect}\033[m" if @threads.length > maxpending
     
-    while @threads.length > maxpending
+    while @threads.length >= maxpending
       @mutex.synchronize do 
         @threads.each_with_index do |t, idx|
           if t[:dead] or ! t[:thread].status
@@ -296,7 +298,7 @@ class ObjDriver
       end
       if ntry >= CONNECTRETRY
         log " #{fullname}: can't connect"
-        @errorinsts.push "#(fullname} (can't connect)"
+        @errorinsts.push "#{fullname} (can't connect)"
         return nil
       end
     end

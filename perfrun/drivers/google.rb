@@ -3,7 +3,7 @@ require 'fog'
 class GoogleDriver < Provider
   PROVIDER='Google Compute Engine'
   CHEF_PROVIDER='google'
-  MAXJOBS = 1
+  MAXJOBS = 2
   PROVIDER_ID = 920  
   LOGIN_AS = 'ubuntu'
   DEFIMAGE='ubuntu-1404-trusty-v20160406'
