@@ -59,8 +59,7 @@ class Provider
         end
       end
     rescue Exception => e
-      puts "e=#{e.message}"
-      puts e.backtrace.join "\n"
+      log "e=#{e.message}"
     end
   end
 

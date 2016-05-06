@@ -26,7 +26,7 @@ class AzureDriver < Provider
     image = DEFIMAGE if image.blank?
     server = self._create_server name, scope, flavor['flavor'], loc, flavor['keyfile'], image
     if server.nil?
-      puts "can't create #{name}: #{server}"
+      log "can't create #{name}: #{server}"
       return nil
     end
     # can't use wait_for because ms changed server.get to require two parameters which causes wait_for to puke
@@ -102,7 +102,6 @@ class AzureDriver < Provider
       end
     rescue Exception => e
       log "e=#{e.message}"
-      #puts e.backtrace.join "\n"
     end
   end
 

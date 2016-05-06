@@ -30,7 +30,7 @@ class DigitalOceanDriver < Provider
     end
     server = self._create_server name, flavor['flavor'], loc, flavor['keyname'], image, false
     if server.nil?
-      puts "can't create #{name}: #{server}"
+      log "can't create #{name}: #{server}"
       return nil
     end
     rv = {}

@@ -112,7 +112,6 @@ class SoftlayerDriver < Provider
       end
     rescue Exception => e
       log "e=#{e.message}"
-      #puts "server=#{server.inspect}"
     end
   end
 

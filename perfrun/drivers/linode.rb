@@ -25,7 +25,7 @@ class LinodeDriver < Provider
     rv = {}
     server= self._create_server name, flavor['flavor'], loc, pass, image, false
     if server.nil?
-      puts "can't create #{name}: #{server}"
+      log "can't create #{name}: #{server}"
       return nil
     end
     server.wait_for { 

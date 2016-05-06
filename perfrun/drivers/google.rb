@@ -22,7 +22,7 @@ class GoogleDriver < Provider
     image = DEFIMAGE if image.blank?
     server = self._create_server name, scope, flavor, loc, image
     if server.nil?
-      puts "can't create #{name}: #{server}"
+      log "can't create #{name}: #{server}"
       return nil
     end
     rv = {}
@@ -111,12 +111,12 @@ class GoogleDriver < Provider
       if server
         server.destroy 
       else
-        puts "can't find server..."        
+        log "can't find server..."        
       end
       while s = self.fetch_server(name, loc)
         break if s.state == 'TERMINATED'
         sleep 1
-        puts "#{name}: #{s.state}"
+        log "#{name}: #{s.state}"
       end
       while disk = self.fetch_disk(name, loc)
         sleep 1
@@ -127,13 +127,12 @@ class GoogleDriver < Provider
           # gross, but the exception is just a generic fog error...
           # XXX maybe there is a way to determine if it's inuse otherwise...
           next if e.message.include? "is already being used by"
-          puts "e=#{e.message} #{e} #{e.class}"
+          log "e=#{e.message} #{e} #{e.class}"
         end
         break
       end
     rescue Exception => e
-      puts "e=#{e.message}"
-      puts e.backtrace.join "\n"
+      log "e=#{e.message}"
     end
   end
 

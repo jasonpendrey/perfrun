@@ -42,7 +42,7 @@ class RackspaceDriver < Provider
     end
     server = self._create_server name, scope, instance, loc, keyname, image, createvol
     if server.nil? or ! server['server']
-      puts "can't create #{name}: #{server}"
+      log "can't create #{name}: #{server}"
       return nil
     end   
     rv = {}
@@ -55,22 +55,23 @@ class RackspaceDriver < Provider
       sleep 10
       s = self.fetch_server rv[:id], loc
       if s.nil? or ! s['server']
-        puts "bad fetch_server: #{s}"
+        log "bad fetch_server: #{s}"
         return nil
       end
-      puts "#{name} status: #{s['server']['status']}" if @verbose > 0
+      log "#{name} status: #{s['server']['status']}" if @verbose > 0
       begin
       if s['server']['status'] == 'ACTIVE'
         rv[:ip] = s['server']['accessIPv4']
         break
       end
       rescue Exception => e
-        puts "server=#{s}"
+        log "server=#{s}"
       end
       nretry -= 1
     end
     if nretry <= 0
-      return "ERROR: timed out creating #{name}\n"
+      log "ERROR: timed out creating #{name}"
+      return nil
     end
     rv
   end
@@ -120,13 +121,13 @@ class RackspaceDriver < Provider
     begin
       auth = JSON.parse (authjs)
     rescue Exception => e
-      puts "can't get rs auth: #{cmd}"
-      puts "rv: #{authjs}"
+      log "can't get rs auth: #{cmd}"
+      log "rv: #{authjs}"
       raise e
     end
     if auth['access'].nil?      
-      puts "can't get rs auth: #{cmd}"
-      puts "rv: #{authjs}"
+      log "can't get rs auth: #{cmd}"
+      log "rv: #{authjs}"
       raise e
     end
     rv = { token: auth['access']['token']['id']}
@@ -162,13 +163,13 @@ class RackspaceDriver < Provider
     begin
       out = `#{cmd}`
       if out.blank?
-        puts "empty output for: #{cmd}"
+        log "empty output for: #{cmd}"
         return nil 
       end
       rv = JSON.parse(out)
     rescue Exception => e
-      puts "error: #{e.message}"
-      puts "cmd= #{cmd}"
+      log "error: #{e.message}"
+      log "cmd= #{cmd}"
       nil
     end
     rv
@@ -252,17 +253,17 @@ class RackspaceDriver < Provider
     cmd = "#{curlauth('POST', loc, :storageendpoint)}/volumes -d '#{JSON.generate(req)}'  2>/dev/null"
     rv = execcmd cmd
     uuid = rv['volume']['id']
-    puts "uuid of new volume: #{uuid}"
+    log "uuid of new volume: #{uuid}"
     nretry = 30
     while nretry > 0
       sleep 10
       r = fetch_volume uuid
       if r['volume'].nil?
-        puts "ignoring volume create message: vol=#{r}" unless r['itemNotFound']
+        log "ignoring volume create message: vol=#{r}" unless r['itemNotFound']
       elsif r['volume']['status'] == 'available'
         break 
       else
-        puts "#{uuid}: #{r['volume']['status']}" if @verbose > 0
+        log "#{uuid}: #{r['volume']['status']}" if @verbose > 0
       end
       nretry -= 1
     end
