@@ -134,6 +134,7 @@ class PerfRun
 
   def self.main
     @mutex = Mutex.new
+    $LOAD_PATH.push "#{Dir.pwd}/config"
     begin
       load CRED_CONFIG
     rescue
@@ -162,22 +163,8 @@ class PerfRun
         o.on('--config CONFIG') { |b|
           @config = b
         }
-        o.on('--buildspec id', '-s id') { |b|
-          if @debug
-            h = 'mike-dev.burstorm.com'
-          else
-            h = APP_HOST
-          end
-          cmd = "curl -X GET -k --user '#{APP_KEY}:#{APP_SECRET}' -H \"Content-Type: application/json\" https://#{h}/api/build/#{b}.json 2>/dev/null"
-          @config_string = `#{cmd}`
-          @config = "build spec #{b}"
-        }
-        o.on('--build id','-b id') { |b|
-          if @debug
-            h = 'mike-dev.burstorm.com'
-          else
-            h = APP_HOST
-          end
+        o.on('--build id','-b id') { |b|          
+          h = APP_HOST
           begin
             id = Integer b
           rescue
@@ -198,6 +185,7 @@ class PerfRun
             
           end
           raise "can't find #{b}" if id.nil?
+          @buildid = id
           cmd = "curl -X GET -k --user '#{APP_KEY}:#{APP_SECRET}' -H \"Content-Type: application/json\" https://#{h}/api/builds/#{id}.json 2>/dev/null"
           @config_string = `#{cmd}`
           @config = "build #{b}"
@@ -228,7 +216,6 @@ class PerfRun
       @hoursperday = 24
       @sleeptmo = 60*5
     end      
-    $LOAD_PATH.push "#{Dir.pwd}/config"
     begin
       if @config_string
         @project = JSON.parse @config_string
@@ -400,7 +387,11 @@ class PerfRun
             end
             next if found
             puts "\033[1mrunning kill van...\033[m"
-            out = `./perfrun --delete`
+            if @buildid
+              out = `./perfrun --delete -b #{@buildid}`
+            else
+              out = `./perfrun --delete -c #{@config}`
+            end
             puts out if @verbose > 0
             puts "\033[1mkill van done.\033[m"
           end

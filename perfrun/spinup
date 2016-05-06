@@ -110,22 +110,8 @@ class Spinup
         o.on('--config CONFIG','-c CONFIG') { |b|
           @config = b
         }
-        o.on('--buildspec id', '-s id') { |b|
-          if @debug
-            h = 'mike-dev.burstorm.com'
-          else
-            h = APP_HOST
-          end
-          cmd = "curl -X GET -k --user '#{APP_KEY}:#{APP_SECRET}' -H \"Content-Type: application/json\" https://#{h}/api/build/#{b}.json 2>/dev/null"
-          @config_string = `#{cmd}`
-          @config = "build spec #{b}"
-        }
         o.on('--build id','-b id') { |b|
-          if @debug
-            h = 'mike-dev.burstorm.com'
-          else
-            h = APP_HOST
-          end
+          h = APP_HOST
           begin
             id = Integer b
           rescue
