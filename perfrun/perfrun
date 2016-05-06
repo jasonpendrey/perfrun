@@ -138,6 +138,7 @@ class PerfRun
       load CRED_CONFIG
     rescue
     end
+    @config_string = nil
     if ARGV.length > 0
       OptionParser.new do |o|
         o.on('--app_host HOST') { |b|
@@ -239,7 +240,7 @@ class PerfRun
         raise 'no such file: '+@config
       end
     rescue Exception => e
-      puts "JSON parse error: #{e.message}}"
+      puts "JSON parse error: #{e.message}"
       exit 1
     end
     nstart = 0
