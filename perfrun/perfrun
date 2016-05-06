@@ -134,6 +134,10 @@ class PerfRun
 
   def self.main
     @mutex = Mutex.new
+    begin
+      load CRED_CONFIG
+    rescue
+    end
     if ARGV.length > 0
       OptionParser.new do |o|
         o.on('--app_host HOST') { |b|
@@ -156,6 +160,46 @@ class PerfRun
         }
         o.on('--config CONFIG') { |b|
           @config = b
+        }
+        o.on('--buildspec id', '-s id') { |b|
+          if @debug
+            h = 'mike-dev.burstorm.com'
+          else
+            h = APP_HOST
+          end
+          cmd = "curl -X GET -k --user '#{APP_KEY}:#{APP_SECRET}' -H \"Content-Type: application/json\" https://#{h}/api/build/#{b}.json 2>/dev/null"
+          @config_string = `#{cmd}`
+          @config = "build spec #{b}"
+        }
+        o.on('--build id','-b id') { |b|
+          if @debug
+            h = 'mike-dev.burstorm.com'
+          else
+            h = APP_HOST
+          end
+          begin
+            id = Integer b
+          rescue
+            cmd = "curl -X GET -k --user '#{APP_KEY}:#{APP_SECRET}' -H \"Content-Type: application/json\" https://#{h}/api/projects.json?for_select=true 2>/dev/null"
+            jproj = `#{cmd}`
+            begin
+              projs = JSON.parse jproj
+            rescue Exception => e
+              raise "bad json: #{e.message}"
+            end
+            id = nil
+            projs.each do |proj|
+              if proj['name'] == b and proj['ptype'] != 'objective'
+                id = proj['id']
+                break
+              end
+            end
+            
+          end
+          raise "can't find #{b}" if id.nil?
+          cmd = "curl -X GET -k --user '#{APP_KEY}:#{APP_SECRET}' -H \"Content-Type: application/json\" https://#{h}/api/builds/#{id}.json 2>/dev/null"
+          @config_string = `#{cmd}`
+          @config = "build #{b}"
         }
         o.on('--fulllist') { |b|
           @mode = 'fulllist'
@@ -185,11 +229,15 @@ class PerfRun
     end      
     $LOAD_PATH.push "#{Dir.pwd}/config"
     begin
-      load CRED_CONFIG
-    rescue
-    end
-    begin
-      @project = JSON.parse File.read(@config)
+      if @config_string
+        @project = JSON.parse @config_string
+      elsif File.exist? @config
+        @project = JSON.parse File.read(@config)
+      elsif File.exist? 'config/'+@config
+        @project = JSON.parse File.read('config/'+@config)
+      else
+        raise 'no such file: '+@config
+      end
     rescue Exception => e
       puts "JSON parse error: #{e.message}}"
       exit 1

@@ -42,6 +42,7 @@ class Spinup
     opts[:verbose] = @verbose
     opts[:object] = obj
     opts[:tags] = @tags
+    opts[:test_connection] = true
     opts[:mode] = @mode
     opts[:maxjobs] = @maxjobs
     opts[:scopes] = scopes
@@ -137,7 +138,7 @@ class Spinup
             end
             id = nil
             projs.each do |proj|
-              if proj['name'] == b and proj['ptype'] == 'quote'
+              if proj['name'] == b and proj['ptype'] != 'objective'
                 id = proj['id']
                 break
               end

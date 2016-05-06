@@ -33,29 +33,34 @@ class ObjDriver
     @verbose = opts[:verbose] || 0
     @autodelete = opts[:autodelete]    
     @testconnection = opts[:test_connection]
-    @curprovider = object['provider']['name']
-    @curlocation = object['provider']['location_flavor'] || object['provider']['address']
+    objprovider = object['provider']['name']
+    @objlocation = object['provider']['location_flavor'] || object['provider']['address']
     @started_at = Time.now if @mode == 'run'
     @app_host = opts[:app_host] if opts[:app_host]
     @errorinsts = [] if @mode == 'run'
     @threads = []
     @mutex = Mutex.new
     watchdog
-    log "Running #{object['name']}@#{@curprovider}/#{@curlocation} to #{@app_host}" if @mode == 'run'
     @actives = {}
+    sentbanner = false
+    toprovision = []
     begin
       object['compute_scopes'].each do |scope|
         break if @aborted
         next if @targscopes and ! @targscopes.include? scopename(scope)
-        set_driver object, scope
-        flavor = flavordefaults scope
+        driver = get_driver object, scope
+        if @mode == 'run' and ! sentbanner
+          log "Running #{object['name']}@#{driver[:provider]}/#{@objlocation} to #{@app_host}" 
+          sentbanner = true
+        end
+        flavor = driver[:driver].flavordefaults scope
         next if flavor.nil?
-        @maxjobs = opts[:maxjobs] || maxjobs
-        provloc = @curprovider+@curlocation
+        @maxjobs = opts[:maxjobs] || driver[:driver]::MAXJOBS
+        provloc = driver[:provider]+@objlocation
         if @actives[provloc].nil?          
           active = {}
           alines = []
-          get_active @curlocation, @mode != 'run' do |id, name, ip, state|
+          driver[:driver].get_active @objlocation, @mode != 'run' do |id, name, ip, state|
             active[name] = name
             alines.push({id:id, name:name, ip:ip, state: state})
           end
@@ -65,7 +70,7 @@ class ObjDriver
           alines = @actives[provloc][:alines]
           active = @actives[provloc][:active]
         end
-        fullname = fullinstname scope
+        fullname = fullinstname scope, driver[:provider]
         log "Running #{fullname}..." if @mode == 'run'
         aline = nil
         alines.each do |a|
@@ -74,15 +79,14 @@ class ObjDriver
           break
         end
         if @mode == 'run'
-          @pubkey = `ssh-keygen -y -f #{File.expand_path flavor['keyfile']}`
-          raise "can't access #{flavor['keyfile']}" if @pubkey.nil? or @pubkey.empty?
-          curthread = {started_at:Time.now, fullname: fullname, inst: scopename(scope), loc: @curlocation, state: 'starting'}
+          pubkey = `ssh-keygen -y -f #{File.expand_path flavor['keyfile']}`
+          raise "can't access #{flavor['keyfile']}" if pubkey.nil? or pubkey.empty?
+          curthread = {started_at:Time.now, fullname: fullname, inst: scopename(scope), loc: @objlocation, state: 'starting'}
           curthread[:thread] = Thread.new {
             curthread[:thread] = Thread.current
-            start =  Time.now
             begin
               if ! active.include? fullname or ! aline or ! aline[:ip]
-                server = start_server fullname, scope, flavor, @curlocation, curthread
+                server = start_server driver, fullname, scope, flavor, @objlocation, curthread, pubkey
                 if ! server
                   delthread curthread        
                   return
@@ -93,7 +97,6 @@ class ObjDriver
                 server[:created_at] = nil
                 ssh_remove_ip server[:ip]
               end
-              scope[:server] = server
               server[:started_at] = curthread[:started_at]
               if server[:ip]
                 curthread[:state] = 'running'
@@ -101,7 +104,12 @@ class ObjDriver
                 if server[:created_at] and @autodelete
                   log "#{fullname}: deleting..."
                   curthread[:state] = 'deleting'
-                  delete_server(fullname, server[:id], @curlocation, flavor)
+                  driver[:driver].delete_server(fullname, server[:id], @objlocation, flavor)
+                  if flavor['provisioning'] == 'chef'
+                    ChefDriver.delete_node(fullname) 
+                  end    
+                else
+                  toprovision.push({scope: scope, server: server})
                 end
               end
             rescue Exception => e
@@ -117,14 +125,17 @@ class ObjDriver
         else
           alines.each do |aline|
             if @mode == 'fulllist'
-              puts sprintf("#{@curlocation}\t%-20s\t#{aline[:id]}\t#{aline[:state]}", aline[:name])
+              puts sprintf("#{@objlocation}\t%-20s\t#{aline[:id]}\t#{aline[:state]}", aline[:name])
             elsif aline[:name] == fullname
               if @mode == 'delete'
                 start = Time.now
-                puts delete_server(fullname, aline[:id], @curlocation, flavor)
+                puts driver[:driver].delete_server(fullname, aline[:id], @objlocation, flavor)
+                if flavor['provisioning'] == 'chef'
+                  ChefDriver.delete_node(fullname) 
+                end    
                 block.call({action: 'deleted', name: fullname, scope: scope, flavor: flavor, id: aline[:id], ip: aline[:ip], runtime: Time.now-start}) if block
               elsif @mode == 'list'
-                puts sprintf("#{@curlocation}\t%-20s\t#{aline[:id]}\t#{aline[:state]}", fullname)
+                puts sprintf("#{@objlocation}\t%-20s\t#{aline[:id]}\t#{aline[:state]}", fullname)
               end
             end
           end
@@ -132,36 +143,37 @@ class ObjDriver
         end
       end	     
       waitthreads
-      # XXX need to deal with maxjobs...
-      if @mode == 'run' and ! @aborted
+      if @mode == 'run' and ! @aborted and toprovision.length > 0
         log "Checking for new nodes to be provisioned..."
-        object['compute_scopes'].each do |scope|
+        toprovision.each do |ent|          
           break if @aborted          
-          set_driver object, scope
-          server = scope[:server]
+          scope = ent[:scope]
+          server = ent[:server]
           next unless server
+          driver = get_driver object, scope
           host = server[:ip]
           next if host.blank?
           id = server[:id]
-          flavor = flavordefaults scope
-          fullname = fullinstname scope
-          curthread = {started_at: server[:started_at], fullname: fullname, inst: scopename(scope), loc: @curlocation, state: 'provisioning'}
+          flavor = driver[:driver].flavordefaults scope
+          fullname = fullinstname scope, driver[:provider]
+          curthread = {started_at: server[:started_at], fullname: fullname, inst: scopename(scope), loc: @objlocation, state: 'provisioning'}
           curthread[:thread] = Thread.new {
             begin
               curthread[:thread] = Thread.current
-              if ! flavor['provisioning'].blank? and (@curprovider == 'host' or server[:created_at])
+              if ! flavor['provisioning'].blank? and (driver[:provider] == 'host' or server[:created_at])
                 log "Provisioning #{fullname} with #{flavor['provisioning']}"
                 case flavor['provisioning']
                 when 'chef'
                   begin 
-                    ChefDriver.bootstrap(host, fullname, provisioning_tags(scope), flavor, @curlocation, @driver.config(@curlocation) )
+                    ChefDriver.bootstrap(host, fullname, provisioning_tags(scope), flavor, @objlocation, driver[:driver].config(@objlocation) )
                   rescue  Exception => e
                     puts "chef err: #{e.message}"
                     puts e.backtrace.join "\n"
                   end
                 end
+                log "#{fullname}: provisioning with #{flavor['provisioning']} done."
               end
-              log "#{fullname}: provisioning done."
+              log "#{fullname}: ready."              
               curthread[:state] = "ready"
               block.call({action: 'ready', name: fullname, scope: scope, flavor: flavor, id: id, ip: host, runtime: Time.now-curthread[:started_at]}) if block
               delthread curthread
@@ -172,10 +184,11 @@ class ObjDriver
           }
           @mutex.synchronize do 
             @threads.push curthread unless curthread[:dead]
-          end            
+          end      
+          waitthreads @maxjobs
         end
-        waitthreads
       end
+      waitthreads
     rescue Exception => e
       puts "ObjDriver: #{e.class} #{e.message} ***"      
       puts e.backtrace.join "\n" if e.class != Interrupt
@@ -187,15 +200,15 @@ class ObjDriver
     @watchdog.kill if @watchdog
     if @mode == 'run'
       waitthreads
-      cleanup
+      cleanup if @autodelete
       if @errorinsts.length > 0
         @errorinsts.uniq!
         log "instances that didn't complete: #{@errorinsts.join(',')}"
       end
-      log "\033[1m#{@curprovider}/#{@curlocation} done at #{Time.now}; #{((Time.now-@started_at)/60).round} minutes\033[0m"
+      log "\033[1m#{objprovider}/#{@objlocation} done at #{Time.now}; #{((Time.now-@started_at)/60).round} minutes\033[0m"
     else
       killall if @aborted
-      log "\033[1m#{@curprovider}/#{@curlocation} #{@aborted ? 'aborted' : 'done'}\033[0m"
+      log "\033[1m#{objprovider}/#{@objlocation} #{@aborted ? 'aborted' : 'done'}\033[0m"
     end
   end
 
@@ -218,7 +231,7 @@ class ObjDriver
     @verbose = n
   end
 
-  def set_driver object, scope
+  def get_driver object, scope
     if scope['flavor'] and scope['flavor']['provider']
       prov = scope['flavor']['provider'] 
     else
@@ -226,9 +239,10 @@ class ObjDriver
     end    
     prov = 'host' if prov.nil?
     require_relative 'drivers/'+prov
-    @driver = (prov.camelize+'Driver').constantize
-    @driver.verbose = @verbose - 1
-    @curprovider = prov
+    driver = (prov.camelize+'Driver').constantize
+    driver.verbose = @verbose - 1
+    @curdriver = driver
+    { driver: driver, provider: prov } 
   end
 
   def waitthreads maxpending=nil
@@ -269,10 +283,10 @@ class ObjDriver
     end
   end
 
-  def start_server fullname, scope, flavor, locflavor, curthread
+  def start_server driver, fullname, scope, flavor, locflavor, curthread, pubkey
     log "creating #{fullname}..."
     curthread[:state] = 'starting'
-    server = create_server(fullname, scope, flavor, locflavor)
+    server = driver[:driver].create_server(fullname, scope, flavor, locflavor)
     if server.nil?
       log "#{fullname}: didn't start"
       @errorinsts.push "#{fullname} didn't start"
@@ -284,7 +298,7 @@ class ObjDriver
     if server[:pass]
       log "#{fullname}: injecting public key..."
       curthread[:state] = 'injectpub'
-      cmd = "sshpass -p #{server[:pass]} ssh #{SSHOPTS} #{flavor['login_as']}@#{server[:ip]} 'mkdir -p .ssh; chmod 0700 .ssh; echo \"#{@pubkey}\" >> .ssh/authorized_keys'"
+      cmd = "sshpass -p #{server[:pass]} ssh #{SSHOPTS} #{flavor['login_as']}@#{server[:ip]} 'mkdir -p .ssh; chmod 0700 .ssh; echo \"#{pubkey}\" >> .ssh/authorized_keys'"
     elsif @testconnection
       log "#{fullname}: testing connection..."
       curthread[:state] = 'conntest'
@@ -375,12 +389,12 @@ class ObjDriver
   end
 
   def killall    
-    log "killall called for #{@curprovider}/#{@curlocation} t=#{@threads.length}" if @verbose > 0
+    log "killall called for #{@curprovider}/#{@objlocation} t=#{@threads.length}" if @verbose > 0
     @threads.each do |t|
       next if t[:dead]
       begin
         t[:thread].kill
-        log "#{@curprovider}/#{@curlocation} killing thread #{t[:thread]}" if @verbose > 0
+        log "#{@curprovider}/#{@objlocation} killing thread #{t[:thread]}" if @verbose > 0
       rescue Exception => e
         log "thread error: #{e.message}"
         end
@@ -389,7 +403,7 @@ class ObjDriver
   end
 
   def cleanup
-    log "cleanup called for #{@curprovider}/#{@curlocation}"
+    log "cleanup called for #{@curprovider}/#{@objlocation}"
     killall
     if @mode == 'run' and @autodelete
       opts = @opts.clone
@@ -400,54 +414,25 @@ class ObjDriver
     system "reset -I 2>/dev/null"
   end
 
-  # driver related calls
-
-  def create_server name, scope, flavor, location
-    @driver.create_server name, scope, flavor, location
-  end
- 
-
-  def delete_server name, id, location, flavor
-    @driver.delete_server name, id, location, flavor
-    if flavor['provisioning'] == 'chef'
-      ChefDriver.delete_node(name) 
-    end    
-  end
-
-  def get_active location, all, &block
-    @driver.get_active location, all, &block
-  end
-
-  def flavordefaults scope
-    @driver.flavordefaults scope
-  end
-
-  def fullinstname scope
+  def fullinstname scope, provider
     rv = scopename(scope)
-    if @autodelete and @curprovider != 'host'
-      rv += '-'+(@curlocation || 'no-location')
+    if @autodelete and provider != 'host'
+      rv += '-'+(@objlocation || 'no-location')
     end
     rv.gsub(/[ \/]/, '-')
   end
 
-  def maxjobs
-    @driver::MAXJOBS
-  end
-
-  def login_as
-    @driver::LOGIN_AS || 'root'
-  end
-
+  # driver related calls
 
   def log msg
     begin
-      File.write logfile, msg+"\n", mode: 'a'
+      @curdriver.log msg
     rescue
     end
   end
 
   def logfile
-    "logs/#{@driver::CHEF_PROVIDER}.log"
+    @curdriver.logfile
   end
 
 end
