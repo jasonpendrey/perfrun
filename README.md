@@ -9,9 +9,9 @@
 
 To get started, you must first clone this repo onto a Linux server or desktop host. This host should have about 4G of ram, and have Ruby installed (eg, on ubuntu 'apt-get install ruby').
 
-$ git clone git@github.com:burstorm/perfrun.git perfrun
+$ git clone https://github.com/burstorm/perfrun.git perfrun
 
-$ cd perfrun 
+$ cd perfrun/perfrun 
 
 $ bundle install
 
@@ -22,34 +22,32 @@ The Burstorm App has the ability to generate the necessary configuration to desc
 
 To create the configuration, start by logging into your Burstorm app account (https://app.burstorm.com) to set up a Build Spec for the servers to benchmark. Creating a Build in the Burstorm app allows you to create a perfrun configuration file which tells the perfrun software about your servers, keys, etc. So much easier than editing a json config blob by hand.
 
-1. Start by creating a Build Spec, and a  Build to model your infrastructure under test. You can then drag a Linux objective onto the Build to describe the server that you will be testing. In this example, our server is a 1 core, 1 GB ram, 5 GB storage Linux instance.  ![Alt text](/doc/images/perfrun.5.png?raw=true "Build with one objective")
+1. Start by creating a Build Spec, and then a Build to model your infrastructure under test. You can then drag a Linux objective onto the Build to describe the server that you will be testing. In this example, our server is a 1 core, 1 GB ram, 5 GB storage Linux instance.  ![Alt text](/doc/images/perfrun.5.png?raw=true "Build with one objective")
 
 2. Now tell the Burstorm app about the particulars of the server you want to test. With the objective
 you created in step (1), click the advanced button, which exposes the Run Spec field. Click on the
 Run Spec field and the Run Spec editor will appear: ![Alt text](/doc/images/perfrun.1.png?raw=true "click on run spec") 
 
 3. Enter the dns name (fqdn) or IP address of the server, and the location of the SSH key file that will be used to log in to the server from the Control Host. 
+4. Remember the name of your Build Spec you created in this section for later
    
    **NOTE**: Burstorm does NOT upload your server keys EVER. This is just a path to the server keys that will be
 used later on your Control Host. ![Alt text](/doc/images/perfrun.2.png?raw=true "edit run spec")
 
-4. Once you've entered your Run Spec information, apply the change, and save the server in the app: ![Alt text](/doc/images/perfrun.3.png?raw=true "save objective")
-
-5. You're now ready to export the perfrun configuration file. Click on the JSON API item in the Save-As pulldown, and the configuration will be downloaded to your computer. ![Alt text](/doc/images/perfrun.4.png?raw=true "save-as JSON API")
+5. Once you've entered your Run Spec information, apply the change, and save the server in the app: ![Alt text](/doc/images/perfrun.3.png?raw=true "save objective")
 
 6. The last step is to generate a Burstorm API key and secret. This allows you to save perfruns to the Burstorm servers under your login name, and keeps them private. ![Alt text](/doc/images/perfrun.6.png?raw=true "create API keys")
 
 Ok, now you've done all of the configuration work you need to do with the Burstorm App. You have 3 more steps to go.
 
-1. take the config file (perfrun.json) you downloaded above and place it into the perfrun/perfrun/config directory.
-2. take the API key and API secret and place them in a file called config/credentials.config. There is a credentials.config.example file in this directory to show the credential file format.
-3. copy your server's SSH key (to allow perfrun to login to your servers) into the perfrun/perfrun/config directory. This MUST be the private key (eg id_rsa, not id_rsa.pub). As we said, we don't upload these, it's just so that perfrun can log into your servers to run performance tests.
+1. take the API key and API secret and place them in a file called config/credentials.config. There is a credentials.config.example file in this directory to show the credential file format.
+2. copy your server's SSH key (to allow perfrun to login to your servers) into the perfrun/perfrun/config directory. This MUST be the private key (eg id_rsa, not id_rsa.pub). As we said, we don't upload these, it's just so that perfrun can log into your servers to run performance tests. The default name that perfrun expects is "server.pem". 
 
 ## Run the Benchmarks
 
 You're now ready to start the performance test run:
 
-1. $ ./perfrun --verbose
+1. $ ./perfrun --verbose --build 'your-build-name'
 2. in another window, you can view the log by running  $ tail -f logs/host.log
 
 This will take a while... approximately 15 minutes or so. Get cup of coffee.
