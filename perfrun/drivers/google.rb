@@ -31,6 +31,7 @@ class GoogleDriver < Provider
     }
     rv[:id] = server.id
     rv[:ip] = server.public_ip_address
+    sleep 10
     rv
   end
 

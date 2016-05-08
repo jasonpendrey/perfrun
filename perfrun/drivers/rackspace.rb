@@ -73,6 +73,7 @@ class RackspaceDriver < Provider
       log "ERROR: timed out creating #{name}"
       return nil
     end
+    sleep 10
     rv
   end
 

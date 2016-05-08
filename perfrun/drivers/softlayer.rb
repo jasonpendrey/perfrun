@@ -10,7 +10,10 @@ class SoftlayerDriver < Provider
 
   def self.get_active location, all, &block
     s = get_auth location
-    servers = s.servers.each do |server|
+    servers = {}
+    s.servers.each do |server|
+      next if servers[server.id]
+      servers[server.id] = true
       next if server.attributes[:datacenter] and server.attributes[:datacenter][:name] != location
       if server.state == 'Running' or all      
         yield server.id, server.name, server.public_ip_address, server.state
@@ -36,6 +39,9 @@ class SoftlayerDriver < Provider
     rv = {}
     rv[:id] = server.id
     rv[:ip] = server.public_ip_address
+    # it seems that softlayer reboots or something like that right after initial spinup, so give some time before declaring it ready
+    sleep 90
+    server.reload
     rv
   end
 
@@ -109,6 +115,7 @@ class SoftlayerDriver < Provider
         else
           server.delete
         end
+        server.wait_for { server.state == 'Halted' }
       end
     rescue Exception => e
       log "e=#{e.message}"

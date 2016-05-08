@@ -87,6 +87,7 @@ else
     ssh $SSHOPTS $PORT $SSH_HOST $CMD 
 fi
 if [ $? != 0 ]; then
-    echo "RunRemote failed for: $@"
+    echo "RunRemote failed for: $@ ${INSTANCE}"
+    exit 1
 fi
 exit 0

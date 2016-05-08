@@ -1,4 +1,5 @@
-require 'active_support/all'  # for camelize
+require 'tempfile'
+require 'json'
 require_relative 'drivers/provider'
 require_relative 'drivers/provisioning'
 require_relative 'drivers/chef'
@@ -44,6 +45,7 @@ class ObjDriver
     @actives = {}
     sentbanner = false
     toprovision = []
+    instances = {}
     begin
       object['compute_scopes'].each do |scope|
         break if @aborted
@@ -62,7 +64,7 @@ class ObjDriver
           alines = []
           driver[:driver].get_active @objlocation, @mode != 'run' do |id, name, ip, state|
             active[name] = name
-            alines.push({id:id, name:name, ip:ip, state: state})
+            alines.push({id: id, name: name, ip: ip, state: state})
           end
           active = active.values
           @actives[provloc] = {active: active, alines: alines}
@@ -95,6 +97,7 @@ class ObjDriver
               else
                 server = aline
                 server[:created_at] = nil
+                log "reusing #{fullname} #{server[:ip]}"
                 ssh_remove_ip server[:ip]
               end
               server[:started_at] = curthread[:started_at]
@@ -124,24 +127,24 @@ class ObjDriver
           waitthreads @maxjobs
         else
           alines.each do |aline|
-            if @mode == 'fulllist'
-              puts sprintf("#{@objlocation}\t%-20s\t#{aline[:id]}\t#{aline[:state]}", aline[:name])
-            elsif aline[:name] == fullname
+            next if instances[aline[:id]]
+            if @mode == 'fulllist' or aline[:name] == fullname
+              instances[aline[:id]] = true
               if @mode == 'delete'
                 start = Time.now
+                puts "deleting #{fullname}/#{aline[:id]}"
                 puts driver[:driver].delete_server(fullname, aline[:id], @objlocation, flavor)
                 if flavor['provisioning'] == 'chef'
                   ChefDriver.delete_node(fullname) 
                 end    
                 block.call({action: 'deleted', name: fullname, scope: scope, flavor: flavor, id: aline[:id], ip: aline[:ip], runtime: Time.now-start}) if block
-              elsif @mode == 'list'
-                puts sprintf("#{@objlocation}\t%-20s\t#{aline[:id]}\t#{aline[:state]}", fullname)
+              else
+                puts sprintf("#{@objlocation}\t%-20s\t#{aline[:id]}\t#{aline[:ip]}\t#{aline[:state]}", aline[:name])
               end
             end
           end
-          return if @mode == 'fulllist'
         end
-      end	     
+      end
       waitthreads
       if @mode == 'run' and ! @aborted and toprovision.length > 0
         log "Checking for new nodes to be provisioned..."
@@ -239,7 +242,7 @@ class ObjDriver
     end    
     prov = 'host' if prov.nil?
     require_relative 'drivers/'+prov
-    driver = (prov.camelize+'Driver').constantize
+    driver = Object.const_get (prov.camel_case+'Driver')
     driver.verbose = @verbose - 1
     @curdriver = driver
     { driver: driver, provider: prov } 
@@ -247,8 +250,8 @@ class ObjDriver
 
   def waitthreads maxpending=nil
     maxpending = 1 if maxpending.nil?
-    log "\033[1mStart waiting for #{@threads.length} threads: #{@threads.inspect}\033[m" if @threads.length > maxpending
     
+    log "\033[1mStart waiting for #{@threads.length} threads: #{threadlist}\033[m" if @threads.length > maxpending    
     while @threads.length >= maxpending
       return if @aborted
       @mutex.synchronize do 
@@ -260,7 +263,7 @@ class ObjDriver
             @threads.delete_at idx
             next
           end
-          log "waiting for #{t[:fullname]} to finish" if @verbose > 0
+          log "waiting for #{t[:fullname]}: #{t[:state]}" if @verbose > 0
         end
       end
       STDOUT.flush
@@ -277,8 +280,12 @@ class ObjDriver
     cmd = "(./RunRemote -I '#{scopename(scope)}' -O '#{scope['id']}' -i '#{File.expand_path flavor['keyfile']}' -H '#{@app_host}' -K #{APP_KEY} -S #{APP_SECRET} --create-time #{cretime} #{flavor['login_as']}@#{ip})  >> #{logfile} 2>&1"
     log "cmd=#{cmd}" if @verbose > 0
     IO.popen cmd do |fd|
-      fd.each do |line|
-        log line if @verbose > 0
+      begin
+        fd.each do |line|
+          log line if @verbose > 0
+        end
+      ensure
+        fd.close
       end
     end
   end
@@ -295,28 +302,29 @@ class ObjDriver
     log "Running created #{fullname} ip=#{server[:ip]}"
     ssh_remove_ip server[:ip]
     cmd = nil
+    done = '__DoneIsDone__'
     if server[:pass]
       log "#{fullname}: injecting public key..."
       curthread[:state] = 'injectpub'
-      cmd = "sshpass -p #{server[:pass]} ssh #{SSHOPTS} #{flavor['login_as']}@#{server[:ip]} 'mkdir -p .ssh; chmod 0700 .ssh; echo \"#{pubkey}\" >> .ssh/authorized_keys'"
-    elsif @testconnection
-      log "#{fullname}: testing connection..."
+      cmd = "sshpass -p #{server[:pass]} ssh #{SSHOPTS} #{flavor['login_as']}@#{server[:ip]} 'mkdir -p .ssh; chmod 0700 .ssh; echo \"#{pubkey}\" >> .ssh/authorized_keys; echo \"#{done}\"'"
+    else
       curthread[:state] = 'conntest'
-      cmd = "ssh #{SSHOPTS} -i #{File.expand_path flavor['keyfile']} #{flavor['login_as']}@#{server[:ip]} 'ls'"
+      cmd = "ssh #{SSHOPTS} -i #{File.expand_path flavor['keyfile']} #{flavor['login_as']}@#{server[:ip]} 'echo \"#{done}\"'"
     end
-    if cmd
-      ntry = 0
-      while ntry < CONNECTRETRY
-        break if system (cmd)
-        ntry += 1
-        log "#{fullname}: connect retry #{ntry}"
-        sleep CONNECTRETRYTMO
-      end
-      if ntry >= CONNECTRETRY
-        log " #{fullname}: can't connect"
-        @errorinsts.push "#{fullname} (can't connect)"
-        return nil
-      end
+    ntry = 0
+    log "#{fullname}: testing #{server[:ip]} connection..."
+    while ntry < CONNECTRETRY
+      out = `#{cmd} 2>/dev/null`
+      log "#{server[:ip]} conntest='#{out}'" if @verbose > 0
+      break if out.end_with? done+"\n"
+      ntry += 1
+      log "#{fullname}: connect retry #{ntry}"
+      sleep CONNECTRETRYTMO
+    end
+    if ntry >= CONNECTRETRY
+      log " #{fullname}: can't connect"
+      @errorinsts.push "#{fullname} (can't connect)"
+      return nil
     end
     return server
   end
@@ -435,5 +443,25 @@ class ObjDriver
     @curdriver.logfile
   end
 
+  def threadlist
+    rv = ''
+    @threads.each do |t|
+      rv += " (#{t[:prov]}/#{t[:loc]}: #{t[:fullname]} #{t[:state]})"
+    end
+    rv 
+  end
+
 end
 
+class String
+  def camel_case
+    return self if self !~ /_/ && self =~ /[A-Z]+.*/
+    split('_').map{|e| e.capitalize}.join
+  end
+end
+
+class Object
+  def blank?
+    respond_to?(:empty?) ? !!empty? : !self
+  end
+end

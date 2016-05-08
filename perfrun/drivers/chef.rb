@@ -13,10 +13,14 @@ class ChefDriver < Provisioning
     puts "#{scriptln}" if @verbose > 0
     rv = ''
     IO.popen scriptln do |fd|
-      fd.each do |line|
-        puts line if @verbose > 0
-        STDOUT.flush
-        rv += line
+      begin
+        fd.each do |line|
+          puts line if @verbose > 0
+          STDOUT.flush
+          rv += line
+        end
+      ensure
+        fd.close
       end
     end
     rv

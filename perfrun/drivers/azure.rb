@@ -40,6 +40,7 @@ class AzureDriver < Provider
     rv = {}
     rv[:ip] = server.ipaddress    
     rv[:id] = server.vm_name
+    sleep 10
     rv
   end
 

@@ -49,10 +49,14 @@ class WebRun
     puts "#{scriptln}"
     rv = ''
     IO.popen scriptln do |fd|
-      fd.each do |line|
-        puts line
-        STDOUT.flush
-        rv += line
+      begin
+        fd.each do |line|
+          puts line
+          STDOUT.flush
+          rv += line
+        end
+      ensure
+        fd.close
       end
     end
     file.unlink    # deletes the temp file
