@@ -3,11 +3,20 @@
 ## Requirements
 
 1. A test control host running a Linux disto (we use Ubuntu, but it's all good)
-2. A set of servers that you want to test, and have SSH access to
+2. About 4GB of ram is optimal, but 2GB should work fine for lighter test loads
+3. A set of servers that you want to test, and have SSH access to
 
 ## Configure the Control Host
 
-To get started, you must first clone this repo onto a Linux server or desktop host. This host should have about 4G of ram, and have Ruby installed (eg, on ubuntu 'apt-get install ruby').
+To get started, you must have Ruby and friends installed ahead of time.
+
+For Ubuntu-16.04 (and probably previous stable Ubuntu versions too), you should have the following installed:
+
+$ sudo apt-get install sudo apt-get install ssh, git, ruby, ruby-bundler, ruby-dev, build-essential, zlib1g-dev
+
+For Fedora, Centos and other Linux distos, the packages are similar but not necessarily the same... send us the corresponding install line for your favorite disto, and we'll update the doc :)
+
+Once installed, it's time to clone the perfrun repo onto your control host:
 
 $ git clone https://github.com/burstorm/perfrun.git perfrun
 
