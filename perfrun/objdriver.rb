@@ -35,7 +35,7 @@ class ObjDriver
     @autodelete = opts[:autodelete]    
     @testconnection = opts[:test_connection]
     objprovider = object['provider']['name']
-    @objlocation = object['provider']['location_flavor'] || object['provider']['address']
+    @objlocation = object['provider']['location_flavor'] || object['provider']['address'] || '--no location--'
     @started_at = Time.now if @mode == 'run'
     @app_host = opts[:app_host] if opts[:app_host]
     @errorinsts = [] if @mode == 'run'
@@ -91,7 +91,7 @@ class ObjDriver
                 server = start_server driver, fullname, scope, flavor, @objlocation, curthread, pubkey
                 if ! server
                   delthread curthread        
-                  return
+                  Thread.exit
                 end
                 server[:created_at] = Time.now
               else
@@ -105,12 +105,14 @@ class ObjDriver
                 curthread[:state] = 'running'
                 block.call({action: 'running', name: fullname, scope: scope, flavor: flavor, id: server[:id], ip: server[:ip], runtime: Time.now-curthread[:started_at]}) if block
                 if server[:created_at] and @autodelete
-                  log "#{fullname}: deleting..."
-                  curthread[:state] = 'deleting'
-                  driver[:driver].delete_server(fullname, server[:id], @objlocation, flavor)
-                  if flavor['provisioning'] == 'chef'
-                    ChefDriver.delete_node(fullname) 
-                  end    
+                  if driver[:provider] != 'host'
+                    log "#{fullname}: deleting..."
+                    curthread[:state] = 'deleting'
+                    driver[:driver].delete_server(fullname, server[:id], @objlocation, flavor)
+                    if flavor['provisioning'] == 'chef'
+                      ChefDriver.delete_node(fullname) 
+                    end    
+                  end
                 else
                   toprovision.push({scope: scope, server: server})
                 end
@@ -245,6 +247,7 @@ class ObjDriver
     driver = Object.const_get (prov.camel_case+'Driver')
     driver.verbose = @verbose - 1
     @curdriver = driver
+    @curprovider = prov
     { driver: driver, provider: prov } 
   end
 
@@ -277,7 +280,7 @@ class ObjDriver
 
 
   def perfrun scope, flavor, ip, cretime=nil
-    cmd = "(./RunRemote -I '#{scopename(scope)}' -O '#{scope['id']}' -i '#{File.expand_path flavor['keyfile']}' -H '#{@app_host}' -K #{APP_KEY} -S #{APP_SECRET} --create-time #{cretime} #{flavor['login_as']}@#{ip})  >> #{logfile} 2>&1"
+    cmd = "(./RunRemote -I '#{scopename(scope)}' -O '#{scope['id']}' -i '#{File.expand_path flavor['keyfile']}' -H '#{@app_host}' -K #{APP_KEY} -S #{APP_SECRET} --create-time #{cretime} --port #{flavor['sshport']} #{flavor['login_as']}@#{ip})  >> #{logfile} 2>&1"
     log "cmd=#{cmd}" if @verbose > 0
     IO.popen cmd do |fd|
       begin
@@ -302,14 +305,14 @@ class ObjDriver
     log "Running created #{fullname} ip=#{server[:ip]}"
     ssh_remove_ip server[:ip]
     cmd = nil
-    done = '__DoneIsDone__'
+    done = '__DoneIsDoneDiddlyDoneDone__'
     if server[:pass]
       log "#{fullname}: injecting public key..."
       curthread[:state] = 'injectpub'
-      cmd = "sshpass -p #{server[:pass]} ssh #{SSHOPTS} #{flavor['login_as']}@#{server[:ip]} 'mkdir -p .ssh; chmod 0700 .ssh; echo \"#{pubkey}\" >> .ssh/authorized_keys; echo \"#{done}\"'"
+      cmd = "sshpass -p #{server[:pass]} ssh #{SSHOPTS} -p #{flavor['sshport']} #{flavor['login_as']}@#{server[:ip]} 'mkdir -p .ssh; chmod 0700 .ssh; echo \"#{pubkey}\" >> .ssh/authorized_keys; echo \"#{done}\"'"
     else
       curthread[:state] = 'conntest'
-      cmd = "ssh #{SSHOPTS} -i #{File.expand_path flavor['keyfile']} #{flavor['login_as']}@#{server[:ip]} 'echo \"#{done}\"'"
+      cmd = "ssh #{SSHOPTS} -p #{flavor['sshport']} -i #{File.expand_path flavor['keyfile']} #{flavor['login_as']}@#{server[:ip]} 'echo \"#{done}\"'"
     end
     ntry = 0
     log "#{fullname}: testing #{server[:ip]} connection..."
@@ -332,7 +335,6 @@ class ObjDriver
   def status
     status = ""
     if @threads.length > 0
-      status += "   running  "
       @threads.each do |t|
         status += "#{t[:fullname]}/#{t[:state]} "
       end
@@ -392,12 +394,13 @@ class ObjDriver
   end
 
   def abort
+    log "aborting #{@curprovider}/#{@objlocation}..."
     @aborted = true
     killall
   end
 
   def killall    
-    log "killall called for #{@curprovider}/#{@objlocation} t=#{@threads.length}" if @verbose > 0
+    log "killall called for #{@curprovider}/#{@objlocation} t=#{@threads.length}" if @verbose > 0 and @threads.length > 0
     @threads.each do |t|
       next if t[:dead]
       begin
@@ -411,8 +414,10 @@ class ObjDriver
   end
 
   def cleanup
+    return if @cleaning
+    @cleaning = true
     log "cleanup called for #{@curprovider}/#{@objlocation}"
-    killall
+    killall    
     if @mode == 'run' and @autodelete
       opts = @opts.clone
       opts[:mode] = 'delete'

@@ -1,0 +1,29 @@
+#!/usr/bin/env ruby
+
+require_relative 'spinup'
+
+# 
+# Here is Burstorm's example of doing custom things once a run action has taken place. 
+# in our case, we want to contact Rackspace's DNS servers to populate the new A record
+# for our new server. You do this simply by subclassing and overriding the runaction method
+# 
+
+class BurSpinup < Spinup
+
+  # @override
+  def self.runaction server
+    if (@mode == 'run')
+      puts "#{server[:id]}: #{server[:action]} #{server[:name]} #{server[:ip]}"
+      require_relative 'drivers/rackspace'
+      if server[:action] == 'running'
+        RackspaceDriver.del_dns "burstorm.com", server[:name]
+        RackspaceDriver.add_dns "burstorm.com", server[:name], server[:ip]
+      elsif server[:action] == 'deleted'
+        RackspaceDriver.del_dns "burstorm.com", server[:name]
+      end
+    end
+  end
+
+end
+
+BurSpinup.main

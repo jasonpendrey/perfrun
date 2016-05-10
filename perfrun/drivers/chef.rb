@@ -9,7 +9,7 @@ class ChefDriver < Provisioning
     roles = roles.join ','
     ident = "-i '#{flavor['keyfile']}'"
     system "ssh-keygen -f ~/.ssh/known_hosts -R #{ip} > /dev/null 2>&1"
-    scriptln = "bundle exec knife bootstrap -r '#{roles}' -N '#{name}' -V --ssh-user '#{flavor['login_as']}' -c #{config} #{ident} #{flavor['additional']} -y --sudo #{ip} 2>&1"
+    scriptln = "bundle exec knife bootstrap -r '#{roles}' -N '#{name}' -V --ssh-user '#{flavor['login_as']}' --ssh-port #{flavor['sshport']} -c #{config} #{ident} #{flavor['additional']} -y --sudo #{ip} 2>&1"
     puts "#{scriptln}" if @verbose > 0
     rv = ''
     IO.popen scriptln do |fd|

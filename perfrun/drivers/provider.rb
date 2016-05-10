@@ -21,13 +21,14 @@ class Provider
     path + '/knife.rb'
   end
 
-  def self.flavordefaults scope
+  def self.flavordefaults scope, nullflavorok=false
     flavor = scope['flavor']
     return nil if flavor.nil?
-    if flavor['flavor'].blank?
+    if flavor['flavor'].blank? and ! nullflavorok
       raise "must specify flavor for #{scope['id']}"
     end
     flavor['login_as'] = self::LOGIN_AS #if flavor['login_as'].blank?
+    flavor['sshport'] = '22' if flavor['sshport'].blank?
     unless flavor['keyfile'].blank?
       if ! flavor['keyfile'].include?('/') and ! flavor['keyfile'].include?('..')
         flavor['keyfile'] = "#{Dir.pwd}/config/#{flavor['keyfile']}"

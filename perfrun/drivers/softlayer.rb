@@ -37,11 +37,12 @@ class SoftlayerDriver < Provider
       server.ready? 
     }
     rv = {}
+    server.reload
     rv[:id] = server.id
     rv[:ip] = server.public_ip_address
     # it seems that softlayer reboots or something like that right after initial spinup, so give some time before declaring it ready
-    sleep 90
-    server.reload
+    log "#{name} created... waiting out softlayer gratuitous reboot..."
+    sleep 90    
     rv
   end
 
@@ -124,17 +125,7 @@ class SoftlayerDriver < Provider
 
   # @override
   def self.flavordefaults scope
-    flavor = scope['flavor']
-    return nil if flavor.nil?
-    flavor['login_as'] = LOGIN_AS #if flavor['login_as'].blank?
-    unless flavor['keyfile'].blank?
-      if ! flavor['keyfile'].include?('/') and ! flavor['keyfile'].include?('..')
-        flavor['keyfile'] = "#{Dir.pwd}/config/#{flavor['keyfile']}"
-      end
-    else
-      flavor['keyfile'] = "#{Dir.pwd}/config/servers.pem"
-    end
-    flavor
+    super scope, true
   end
 
 end

@@ -207,7 +207,7 @@ install:
 	cpan Time::HiRes
 	cpan HTTP::Request
 	cpan LWP::UserAgent
-	cpan LWP::Protocol::https
+#	cpan LWP::Protocol::https
 	cpan MIME::Base64
 
 # Individual programs

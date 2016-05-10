@@ -1,12 +1,18 @@
 IDENT := -i ~/.ssh/deployer
+USER := deployer
 ARCH := $(shell uname -m)
 OS := $(shell uname)
+LOC := /srv/bench-disto/
 
 publish: 
-	cd ../BurUnixBench; scp RunRemote mike-dev.burstorm.com:/srv/bench-disto/; make noarch-tar; scp tmp/BurUnixBench-noarch.tgz mike-dev.burstorm.com:/srv/bench-disto/
-	cd ../BurUnixBench; make tar; scp tmp/BurUnixBench-$(ARCH)-$(OS).tgz mike-dev.burstorm.com:/srv/bench-disto/
+	cd ../BurUnixBench; mkdir -p tmp
+	cd ../BurUnixBench; cp -f RunRemote $(LOC); make noarch-tar; cp -f tmp/BurUnixBench-noarch.tgz $(LOC)
+	cd ../BurUnixBench; make tar; cp -f tmp/BurUnixBench-$(ARCH)-$(OS).tgz $(LOC)
 test-publish: 
-	cd ../BurUnixBench; scp $(IDENT) /srv/bench-disto/* test.burstorm.com:/srv/bench-disto/
+	cd ../BurUnixBench; for host in "test" "ops" ; do echo "copying to $$host"; scp $(IDENT) $(LOC)* $(USER)@$$host.burstorm.com:$(LOC); done
 
 prod-publish: 
-	cd ../BurUnixBench; scp $(IDENT) /srv/bench-disto/* app01.burstorm.com:/srv/bench-disto/; scp $(IDENT) /srv/bench-disto/* app02.burstorm.com:/srv/bench-disto/
+	cd ../BurUnixBench; for host in "app01" "app02" ; do echo "copying to $$host"; scp $(IDENT) $(LOC)* $(USER)@$$host.burstorm.com:$(LOC); done
+
+newprod-publish: 
+	cd ../BurUnixBench; for host in "pgs" "rmq" "web03" ; do echo "copying to $$host"; scp $(IDENT) $(LOC)* $(USER)@$$host.burstorm.com:$(LOC); done
