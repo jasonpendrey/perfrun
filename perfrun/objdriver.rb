@@ -132,10 +132,10 @@ class ObjDriver
             next if instances[aline[:id]]
             if @mode == 'fulllist' or aline[:name] == fullname
               instances[aline[:id]] = true
-              if @mode == 'delete'
+              if @mode == 'delete' or @mode == 'cleanup'
                 start = Time.now
-                puts "deleting #{fullname}/#{aline[:id]}"
-                puts driver[:driver].delete_server(fullname, aline[:id], @objlocation, flavor)
+                puts "deleting #{fullname}/#{aline[:id]}" if @mode == 'delete'
+                driver[:driver].delete_server(fullname, aline[:id], @objlocation, flavor)
                 if flavor['provisioning'] == 'chef'
                   ChefDriver.delete_node(fullname) 
                 end    
@@ -420,7 +420,7 @@ class ObjDriver
     killall    
     if @mode == 'run' and @autodelete
       opts = @opts.clone
-      opts[:mode] = 'delete'
+      opts[:mode] = 'cleanup'
       r = self.class.new
       r.run opts
     end
