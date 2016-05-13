@@ -8,12 +8,15 @@ class Spinup
   def self.oneoffrun     
     @objs.each do |obj|
       next if obj['compute_scopes'].length == 0      
-      found = true
       if ARGV.length > 0
+        next if obj['name'] != ARGV[0]
+      end
+      found = true
+      if ARGV.length > 1
         found = false
         scopes = []
         obj['compute_scopes'].each do |scope|
-          if ARGV.include? scope['details']
+          if ARGV[1..-1].include? scope['details']
             scopes.push scope 
             found = true
           end

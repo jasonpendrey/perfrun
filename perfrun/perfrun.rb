@@ -222,10 +222,16 @@ class PerfRun
       rescue
         cmd = "curl -X GET -k --user '#{APP_KEY}:#{APP_SECRET}' -H \"Content-Type: application/json\" https://#{h}/api/projects.json?for_select=true 2>/dev/null"
         jproj = `#{cmd}`
-        begin
-          projs = JSON.parse jproj
-        rescue Exception => e
-          raise "bad json: #{e.message}"
+        if jproj.blank?
+          puts "no build list returned. probably bad credentials: try executing the following to debug..."
+          puts "#{cmd}"
+          exit 1
+        else
+          begin
+            projs = JSON.parse jproj
+          rescue Exception => e
+            raise "bad json: #{e.message} '#{jproj}"
+          end
         end
         id = nil
         projs.each do |proj|
@@ -240,7 +246,13 @@ class PerfRun
       cmd = "curl -X GET -k --user '#{APP_KEY}:#{APP_SECRET}' -H \"Content-Type: application/json\" https://#{h}/api/builds/#{id}.json 2>/dev/null"
       begin
         out = `#{cmd}`            
-        @project = JSON.parse out
+        if out.blank?
+          puts "build not found for: #{id}. command that failed: "
+          puts cmd
+          exit 1
+        else
+          @project = JSON.parse out
+        end
       rescue Exception => e
         puts "JSON parse error: #{e.message}"
         exit 1

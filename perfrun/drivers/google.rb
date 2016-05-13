@@ -11,6 +11,9 @@ class GoogleDriver < Provider
   def self.get_active location, all, &block
     s = get_auth location
     s.servers.each do |server|
+      # comes in as a url... grumble
+      zone = server.zone.split('/').last
+      next if zone and zone != location
       if server.state == 'RUNNING' or all      
         yield server.id, server.name, server.public_ip_address, server.state
       end

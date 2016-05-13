@@ -242,9 +242,18 @@ class ObjDriver
     else
       prov = object['provider']['cloud_driver']
     end    
-    prov = 'host' if prov.nil?
-    require_relative 'drivers/'+prov
-    driver = Object.const_get (prov.camel_case+'Driver')
+    prov = 'host' if prov.blank?
+    begin
+      require_relative 'drivers/'+prov
+      driver = Object.const_get (prov.camel_case+'Driver')
+    rescue Exception => e
+      if scope['flavor'] and scope['flavor']['provider']
+        puts "error loading flavor driver: #{prov}"
+      else
+        puts "error loading provider driver: #{prov}"
+      end    
+      exit 1
+    end
     driver.verbose = @verbose - 1
     @curdriver = driver
     @curprovider = prov
