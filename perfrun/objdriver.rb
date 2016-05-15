@@ -305,7 +305,7 @@ class ObjDriver
         end
       end
       return if rv.exitstatus.to_i == 0
-      sleep 10
+      sleep 60
       log "RunRemote: retry ##{i+1} $?=#{rv.inspect}"
     end
     log "RunRemote: exhausted all retries. giving up."
