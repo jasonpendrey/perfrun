@@ -39,9 +39,9 @@ class Provider
     flavor
   end
 
-  def self.gen_pass
+  def self.gen_pass n=50
     o = [('a'..'z'), ('A'..'Z'), ('0'..'9')].map { |i| i.to_a }.flatten
-    string = (0...50).map { o[rand(o.length)] }.join
+    string = (0...n).map { o[rand(o.length)] }.join
   end
 
   def self.fetch_server id, loc

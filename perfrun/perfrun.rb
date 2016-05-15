@@ -427,7 +427,7 @@ class PerfRun
             ver = @verbose ? "--verbose" : ''
             cfg = @buildid ? "-b #{@buildid}" : "-c #{@config}"
             apph = @app_host ? "--app-host #{@app_host}" : ""
-            out = `bundle exec ./perfrun #{dbg} #{ver} #{cfg} #{apph} --delete`
+            out = `./perfrun #{dbg} #{ver} #{cfg} #{apph} --delete`
             puts out if @verbose > 0
             puts "\033[1mkill van done.\033[m"
           end
