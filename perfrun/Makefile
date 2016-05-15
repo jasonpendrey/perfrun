@@ -12,7 +12,4 @@ test-publish:
 	cd ../BurUnixBench; for host in "test" "ops" ; do echo "copying to $$host"; scp $(IDENT) $(LOC)* $(USER)@$$host.burstorm.com:$(LOC); done
 
 prod-publish: 
-	cd ../BurUnixBench; for host in "app01" "app02" ; do echo "copying to $$host"; scp $(IDENT) $(LOC)* $(USER)@$$host.burstorm.com:$(LOC); done
-
-newprod-publish: 
 	cd ../BurUnixBench; for host in "pgs" "rmq" "web03" ; do echo "copying to $$host"; scp $(IDENT) $(LOC)* $(USER)@$$host.burstorm.com:$(LOC); done

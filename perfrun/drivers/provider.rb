@@ -45,14 +45,19 @@ class Provider
   end
 
   def self.fetch_server id, loc
-    s = get_auth loc
-    server = s.servers.get(id)
+    begin
+      s = get_auth loc
+      server = s.servers.get(id)
+    rescue
+      nil
+    end
   end
 
   def self._delete_server id, loc
+    server = nil
     begin
       server = self.fetch_server id, loc
-      if server
+      unless server.nil?
         if server.respond_to? :destroy
           server.destroy 
         else
@@ -60,7 +65,7 @@ class Provider
         end
       end
     rescue Exception => e
-      log "e=#{e.message}"
+      log "delete error: e=#{e.message} from: #{server.inspect}"
     end
   end
 

@@ -6,7 +6,7 @@ class GoogleDriver < Provider
   MAXJOBS = 2
   PROVIDER_ID = 920  
   LOGIN_AS = 'ubuntu'
-  DEFIMAGE='ubuntu-1404-trusty-v20160406'
+  DEFIMAGE='ubuntu-1404-trusty-v20160509a'
 
   def self.get_active location, all, &block
     s = get_auth location
@@ -22,7 +22,8 @@ class GoogleDriver < Provider
 
   def self.create_server name, scope, flavor, loc
     image = flavor['imageid']
-    image = DEFIMAGE if image.blank?
+    #image = DEFIMAGE if image.blank?
+    image = get_image loc if image.blank?
     server = self._create_server name, scope, flavor, loc, image
     if server.nil?
       log "can't create #{name}: #{server}"
@@ -140,5 +141,19 @@ class GoogleDriver < Provider
     end
   end
 
+  def self.get_image loc
+    if @ubuntuimage and @fetchtime+3600 > Time.now
+      return @ubuntuimage 
+    end
+    @fetchtime = Time.now
+    s = get_auth loc
+    imgs = []
+    s.images.each do |img|
+      next unless img.name.start_with? 'ubuntu-1404'
+      imgs.push img.name
+    end
+    imgs.sort!
+    return @ubuntuimage = imgs.last
+  end
 
 end

@@ -290,16 +290,25 @@ class ObjDriver
 
   def perfrun scope, flavor, ip, cretime=nil
     cmd = "(./RunRemote -I '#{scopename(scope)}' -O '#{scope['id']}' -i '#{File.expand_path flavor['keyfile']}' -H '#{@app_host}' -K #{APP_KEY} -S #{APP_SECRET} --create-time #{cretime} --port #{flavor['sshport']} #{flavor['login_as']}@#{ip})  >> #{logfile} 2>&1"
-    log "cmd=#{cmd}" if @verbose > 0
-    IO.popen cmd do |fd|
-      begin
-        fd.each do |line|
-          log line if @verbose > 0
+    log "cmd=#{cmd}" if @verbose > 0    
+    for i in 0..1 do
+      break if @aborted
+      rv = nil
+      IO.popen cmd do |fd|
+        begin
+          fd.each do |line|
+            log line if @verbose > 0
+          end
+        ensure
+          fd.close
+          rv = $?
         end
-      ensure
-        fd.close
       end
+      return if rv.exitstatus.to_i == 0
+      sleep 10
+      log "RunRemote: retry ##{i+1} $?=#{rv.inspect}"
     end
+    log "RunRemote: exhausted all retries. giving up."
   end
 
   def start_server driver, fullname, scope, flavor, locflavor, curthread, pubkey
@@ -326,6 +335,7 @@ class ObjDriver
     ntry = 0
     log "#{fullname}: testing #{server[:ip]} connection..."
     while ntry < CONNECTRETRY
+      break if @aborted
       out = `#{cmd} 2>/dev/null`
       log "#{server[:ip]} conntest='#{out}'" if @verbose > 0
       break if out.end_with? done+"\n"

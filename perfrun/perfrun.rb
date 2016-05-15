@@ -25,6 +25,19 @@ class PerfRun
   def self.daemonrun 
     killdaemon true
     nextfill = Time.now
+    nobjs = []
+    @objs.each do |obj|
+      if ARGV.length > 0
+        prov = obj['provider']['cloud_driver'] || obj['provider']['name']
+        next if ARGV[0] != prov
+        if ARGV.length > 1
+          loc = obj['provider']['location_flavor'] || obj['provider']['address']
+          next if ARGV[1] != loc 
+        end
+      end
+      nobjs.push obj
+    end
+    @objs = nobjs
     begin
       while true
         puts "\033[1mchecking run at #{Time.now.to_s} (nextfill @#{nextfill.to_s})\033[m"
@@ -32,16 +45,7 @@ class PerfRun
         if nextfill <= Time.now
           puts "refilling schedule..."
           @objs.each do |obj|
-            if ARGV.length > 0
-              prov = obj['provider']['cloud_driver'] || obj['provider']['name']
-              loc = obj['provider']['location_flavor'] || obj['provider']['address']
-              next if ARGV[0] != prov
-              if ARGV.length > 1
-                next if ARGV[1] != loc 
-              end
-            end
             obj[:nextrun] = roll
-            #puts "#{obj.inspect}" if @verbose > 0
           end
           nextfill = Time.now+(@period*24*60*60)
         end
@@ -212,7 +216,6 @@ class PerfRun
       end
     else
       h = APP_HOST
-      h = 'devbox-mtcc.burstorm.com' if @debug
       if @build_name.nil?
         now = Time.now
         @build_name = "Perfrun #{now.month}/#{now.year}"
@@ -255,6 +258,10 @@ class PerfRun
         end
       rescue Exception => e
         puts "JSON parse error: #{e.message}"
+        exit 1
+      end
+      if @project['ajax_error']
+        puts "#{@build_name} #{id}: #{@project['ajax_error']}"
         exit 1
       end
       @config = "build #{@build_name}"
@@ -416,11 +423,11 @@ class PerfRun
             end
             next if found
             puts "\033[1mrunning kill van...\033[m"
-            if @buildid
-              out = `./perfrun --delete -b #{@buildid}`
-            else
-              out = `./perfrun --delete -c #{@config}`
-            end
+            dbg = @debug ? "--debug" : ''
+            ver = @verbose ? "--verbose" : ''
+            cfg = @buildid ? "-b #{@buildid}" : "-c #{@config}"
+            apph = @app_host ? "--app-host #{@app_host}" : ""
+            out = `bundle exec ./perfrun #{dbg} #{ver} #{cfg} #{apph} --delete`
             puts out if @verbose > 0
             puts "\033[1mkill van done.\033[m"
           end
