@@ -2,7 +2,7 @@ require 'fog'
 
 class DigitalOceanDriver < Provider
   PROVIDER='Digital Ocean'
-  CHEF_PROVIDER='digital_ocean'
+  LOG_PROVIDER='digital_ocean'
   MAXJOBS = 1
   PROVIDER_ID = 110
   LOGIN_AS = 'root'
@@ -46,25 +46,11 @@ class DigitalOceanDriver < Provider
   def self.get_auth loc
     return @auth if @auth
     keys = get_keys loc
-    @auth = Fog::Compute.new(:provider => 'DigitalOcean', :digitalocean_token => keys[:apiKey], :version => 'V2')
+    @auth = Fog::Compute.new({:provider => 'DigitalOcean', :version => 'V2'}.merge keys)
   end
 
-  # XXX there's probably a better way to read knife.rb...
   def self.get_keys loc
-    akey = "knife[:digital_ocean_access_token]"
-    rv = {}
-    File.open(self.config loc).each do |line|
-      # kill comments
-      idx = line.index '#'
-      unless idx.nil?
-        line = line[0..idx-1]
-      end
-      if line.start_with? akey
-        l = line.split '='
-        rv[:apiKey] = l[1].strip[1..-2]
-      end
-    end
-    rv
+    super({:digitalocean_token =>nil}, loc)
   end
 
   def self._create_server name, instance, loc, keyname, image, createvol=false

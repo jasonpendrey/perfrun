@@ -2,11 +2,10 @@ require 'fog'
 
 class GoogleDriver < Provider
   PROVIDER='Google Compute Engine'
-  CHEF_PROVIDER='google'
+  LOG_PROVIDER='google'
   MAXJOBS = 2
   PROVIDER_ID = 920  
   LOGIN_AS = 'ubuntu'
-  DEFIMAGE='ubuntu-1404-trusty-v20160509a'
 
   def self.get_active location, all, &block
     s = get_auth location
@@ -22,7 +21,6 @@ class GoogleDriver < Provider
 
   def self.create_server name, scope, flavor, loc
     image = flavor['imageid']
-    #image = DEFIMAGE if image.blank?
     image = get_image loc if image.blank?
     server = self._create_server name, scope, flavor, loc, image
     if server.nil?
@@ -42,30 +40,12 @@ class GoogleDriver < Provider
   def self.get_auth loc
     return @auth if @auth
     keys = get_keys loc
-    @auth = Fog::Compute.new(:provider => 'Google', google_project: keys[:username], google_json_key_location: keys[:apiKey] )
+    @auth = Fog::Compute.new({:provider => 'Google'}.merge keys)
   end
 
-  # XXX there's probably a better way to read knife.rb...
   def self.get_keys loc
-    ukey = "knife[:google_project]"
-    akey = "knife[:google_json_key_location]"
-    rv = {}
-    File.open(self.config loc).each do |line|
-      # kill comments
-      idx = line.index '#'
-      unless idx.nil?
-        line = line[0..idx-1]
-      end
-      if line.start_with? ukey
-        l = line.split '='
-        rv[:username] = l[1].strip[1..-2]
-      end
-      if line.start_with? akey
-        l = line.split '='
-        rv[:apiKey] = l[1].strip[1..-2]
-      end
-    end
-    rv
+    gkeys = { :google_project => nil, :google_json_key_location => nil }
+    super gkeys, loc
   end
 
   def self._create_server name, scope, flavor, loc, image

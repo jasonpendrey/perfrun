@@ -352,5 +352,6 @@ DEPENDENCIES
   chef
   fog
   fog-azure
+  fog-openstack
   google-api-client (~> 0.8.6)
   webrick

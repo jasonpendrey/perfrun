@@ -5,7 +5,7 @@ require 'xmlsimple'
 
 class AzureDriver < Provider
   PROVIDER = 'Microsoft Azure'
-  CHEF_PROVIDER = 'azure'
+  LOG_PROVIDER = 'azure'
   MAXJOBS = 1
   PROVIDER_ID = 92
   LOGIN_AS = 'ubuntu'
@@ -14,7 +14,7 @@ class AzureDriver < Provider
   def self.get_active location, all, &block
     s = get_auth location
     s.servers.each do |server|
-      # XXX: fricking azure doesn't seem to have which datacetner it's located in... location doesn't return anything
+      # XXX: fricking azure doesn't seem to have which datacenter it's located in... location doesn't return anything
       if server.state == 'Running' or all      
         yield server.vm_name, server.vm_name, server.public_ip_address, server.state
       end
@@ -54,7 +54,7 @@ class AzureDriver < Provider
   def self.get_auth loc
     return @auth if @auth
     keys = get_keys loc
-    management_cert = OpenSSL::PKCS12.new(Base64.decode64(keys[:apiKey]))
+    management_cert = OpenSSL::PKCS12.new(Base64.decode64(keys[:cert]))
     f = Tempfile.new 'az'
     f.write management_cert.certificate.to_pem + management_cert.key.to_pem
     f.close
@@ -62,27 +62,18 @@ class AzureDriver < Provider
     @auth
   end
 
-  # XXX there's probably a better way to read knife.rb...
   def self.get_keys loc
-    ukey = "knife[:azure_publish_settings_file]"
-    rv = {}
-    File.open(self.config loc).each do |line|
-      # kill comments
-      idx = line.index '#'
-      unless idx.nil?
-        line = line[0..idx-1]
-      end
-      if line.start_with? ukey
-        l = line.split '='
-        rv[:xml] = l[1].strip[1..-2]
-      end
-    end
-    data = File.read 'config/'+rv[:xml]
+    rv = super({:azure_publish_settings_file => nil}, loc)
+    data = File.read 'config/'+rv[:azure_publish_settings_file]
     xml = XmlSimple.xml_in data
     rv[:username] = xml['PublishProfile'][0]['Subscription'][0]['Id']
-    rv[:apiKey] = xml['PublishProfile'][0]['Subscription'][0]['ManagementCertificate']
+    rv[:cert] = xml['PublishProfile'][0]['Subscription'][0]['ManagementCertificate']
     rv[:url] = xml['PublishProfile'][0]['Subscription'][0]['ServiceManagementUrl']
     rv
+  end
+
+  def self.storagename name
+    name.gsub('-', '').downcase
   end
 
   def self._create_server name, scope, instance, loc, keyfile, image
@@ -90,7 +81,9 @@ class AzureDriver < Provider
     # XXX these firewall settings are for burstorm servers, think nothing of changing them...
     burfw = "2200:2200,80:80,443:443,12345:12345,12346:12346"
     server = s.servers.create(:vm_name => name, :image => image, :location => loc, :vm_size => instance, 
-                              :private_key_file => keyfile, :vm_user => 'ubuntu', :tcp_endpoints => burfw)
+                              :private_key_file => keyfile, :vm_user => 'ubuntu', :tcp_endpoints => burfw,
+#                              :storage_account_name => storagename(name))
+                              )
     server
   end
 
@@ -98,8 +91,29 @@ class AzureDriver < Provider
     begin
       server = self.fetch_server id, loc
       return if server.state != 'Running'
-      if server
-        server.destroy 
+      if server        
+        sname = storagename(server.vm_name)
+        server.destroy
+=begin
+        s = get_auth loc
+        (0..5).each do |n|
+          begin
+            acct = s.storage_accounts.get sname
+            puts "#{n+1}: del disk=#{sname} #{acct.inspect}"
+            rv = acct.destroy
+            puts "after destroy... #{rv.inspect}"
+            if rv and rv.include? 'BadRequest'
+              puts "will retry #{sname} in 10 seconds..."
+              sleep 10
+            else
+              break
+            end
+          rescue
+            puts "will retry #{sname} in 10 seconds..."
+            sleep 10
+          end
+        end
+=end
       end
     rescue Exception => e
       log "e=#{e.message}"

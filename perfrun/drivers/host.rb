@@ -1,5 +1,5 @@
 class HostDriver < Provider
-  CHEF_PROVIDER = "host"
+  LOG_PROVIDER = "host"
   MAXJOBS = 6
   LOGIN_AS = 'root'
 

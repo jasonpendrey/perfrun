@@ -2,7 +2,7 @@ require 'fog'
 
 class Ec2Driver < Provider
   PROVIDER='Amazon/AWS'
-  CHEF_PROVIDER='ec2'
+  LOG_PROVIDER='ec2'
   MAXJOBS = 2
   PROVIDER_ID = 67
   LOGIN_AS = 'ubuntu'
@@ -46,30 +46,11 @@ class Ec2Driver < Provider
   def self.get_auth loc
     return @authlocs[loc] if @authlocs[loc]
     keys = get_keys loc
-    @authlocs[loc] = Fog::Compute.new(:provider => 'AWS', :aws_access_key_id => keys[:username], :aws_secret_access_key => keys[:apiKey], :region => loc)
+    @authlocs[loc] = Fog::Compute.new({:provider => 'AWS', :region => loc}.merge keys)
   end
 
-  # XXX there's probably a better way to read knife.rb...
   def self.get_keys loc
-    ukey = "knife[:aws_access_key_id]"
-    akey = "knife[:aws_secret_access_key]"
-    rv = {}
-    File.open(self.config loc).each do |line|
-      # kill comments
-      idx = line.index '#'
-      unless idx.nil?
-        line = line[0..idx-1]
-      end
-      if line.start_with? ukey
-        l = line.split '='
-        rv[:username] = l[1].strip[1..-2]
-      end
-      if line.start_with? akey
-        l = line.split '='
-        rv[:apiKey] = l[1].strip[1..-2]
-      end
-    end
-    rv
+    super({:aws_access_key_id => nil, :aws_secret_access_key =>nil}, loc)
   end
 
   def self._create_server name, instance, loc, keyname, image, createvol=false

@@ -2,7 +2,7 @@ require 'fog'
 
 class SoftlayerDriver < Provider
   PROVIDER='Softlayer'
-  CHEF_PROVIDER='softlayer'
+  LOG_PROVIDER='softlayer'
   MAXJOBS = 1
   PROVIDER_ID = 574
   LOGIN_AS = 'root'
@@ -49,35 +49,11 @@ class SoftlayerDriver < Provider
   def self.get_auth loc
     return @auth if @auth
     keys = get_keys loc
-    @auth = Fog::Compute.new(:provider => 'Softlayer', :softlayer_username => keys[:username], :softlayer_api_key => keys[:apiKey], :softlayer_default_domain => keys[:domain])
+    @auth = Fog::Compute.new({:provider => 'Softlayer'}.merge keys)
   end
 
-  # XXX there's probably a better way to read knife.rb...
   def self.get_keys loc
-    ukey = "knife[:softlayer_username]"
-    akey = "knife[:softlayer_api_key]"
-    dkey = "knife[:softlayer_default_domain]"
-    rv = {}
-    File.open(self.config loc).each do |line|
-      # kill comments
-      idx = line.index '#'
-      unless idx.nil?
-        line = line[0..idx-1]
-      end
-      if line.start_with? ukey
-        l = line.split '='
-        rv[:username] = l[1].strip[1..-2]
-      end
-      if line.start_with? akey
-        l = line.split '='
-        rv[:apiKey] = l[1].strip[1..-2]
-      end
-      if line.start_with? dkey
-        l = line.split '='
-        rv[:domain] = l[1].strip[1..-2]
-      end
-    end
-    rv
+    super({:softlayer_username => nil, :softlayer_api_key => nil, :softlayer_default_domain => nil}, loc)
   end
 
   def self._create_server name, scope, instance, loc, keyname, image, createvol=false

@@ -10,7 +10,7 @@ use LWP::UserAgent;
 use MIME::Base64;
 
 my $http_proto;
-if (1) {
+if (0) {
     $http_proto='http';
 } else {
 #    use LWP::Protocol::https;

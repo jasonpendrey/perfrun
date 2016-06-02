@@ -5,18 +5,18 @@ class Spinup
   CONFIG = "config/spinup.json"
   CRED_CONFIG = "config/credentials.config"
 
-  def self.oneoffrun     
+  def self.oneoffrun   
     @objs.each do |obj|
       next if obj['compute_scopes'].length == 0      
       if ARGV.length > 0
-        next if obj['name'] != ARGV[0]
+        next if obj['name'].strip != ARGV[0].strip
       end
       found = true
       if ARGV.length > 1
         found = false
         scopes = []
         obj['compute_scopes'].each do |scope|
-          if ARGV[1..-1].include? scope['details']
+          if ARGV[1..-1].include? scope['details'].strip
             scopes.push scope 
             found = true
           end

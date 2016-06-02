@@ -3,7 +3,7 @@ require 'fog'
 class LinodeDriver < Provider
   PROVIDER='Linode'
   PROVIDER_ID = 90
-  CHEF_PROVIDER='linode'
+  LOG_PROVIDER='linode'
   MAXJOBS = 1
   LOGIN_AS = 'root'
   DEFIMAGE = '124'
@@ -41,30 +41,11 @@ class LinodeDriver < Provider
   def self.get_auth loc
     return @auth if @auth
     keys = get_keys loc
-    @auth = Fog::Compute.new(:provider => 'Linode', :linode_api_key => keys[:apiKey])
+    @auth = Fog::Compute.new({:provider => 'Linode'}.merge keys)
   end
 
-  # XXX there's probably a better way to read knife.rb...
   def self.get_keys loc
-    ukey = "knife[:linode_api_username]"
-    akey = "knife[:linode_api_key]"
-    rv = {}
-    File.open(self.config loc).each do |line|
-      # kill comments
-      idx = line.index '#'
-      unless idx.nil?
-        line = line[0..idx-1]
-      end
-      if line.start_with? ukey
-        l = line.split '='
-        rv[:username] = l[1].strip[1..-2]
-      end
-      if line.start_with? akey
-        l = line.split '='
-        rv[:apiKey] = l[1].strip[1..-2]
-      end
-    end
-    rv
+    super({:linode_api_key => nil}, loc)
   end
 
   def self._create_server name, instance, loc, pass, image=nil, createvol=false

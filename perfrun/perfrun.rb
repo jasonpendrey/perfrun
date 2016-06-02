@@ -12,9 +12,9 @@ class PerfRun
       if ARGV.length > 0
         prov = obj['provider']['cloud_driver'] || obj['provider']['name']
         loc = obj['provider']['location_flavor'] || obj['provider']['address']
-        next if ARGV[0] != prov
+        next if ARGV[0].strip != prov.strip
         if ARGV.length > 1
-          next if ARGV[1] != loc 
+          next if ARGV[1].strip != loc.strip
         end
       end
       runone obj
@@ -29,10 +29,10 @@ class PerfRun
     @objs.each do |obj|
       if ARGV.length > 0
         prov = obj['provider']['cloud_driver'] || obj['provider']['name']
-        next if ARGV[0] != prov
+        next if ARGV[0].strip != prov.strip
         if ARGV.length > 1
           loc = obj['provider']['location_flavor'] || obj['provider']['address']
-          next if ARGV[1] != loc 
+          next if ARGV[1].strip != loc.strip
         end
       end
       nobjs.push obj

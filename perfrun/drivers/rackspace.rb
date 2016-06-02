@@ -4,7 +4,7 @@ class RackspaceDriver < Provider
 
   PROVIDER = 'Rackspace'
   PROVIDER_ID = 39
-  CHEF_PROVIDER = 'rackspace'
+  LOG_PROVIDER = 'rackspace'
   MAXJOBS = 1
   LOGIN_AS = 'root'
   IDENTURL = 'https://identity.api.rackspacecloud.com/v2.0/tokens'
@@ -77,33 +77,22 @@ class RackspaceDriver < Provider
     rv
   end
 
-  def self.config loc
-    loc = loc.upcase
-    path = self.keypath || 'config'
-    path + (loc == "LON" ? '/knife.rsuk.rb' : '/knife.rb')
-  end
-
-  # XXX there's probably a better way to read knife.rb...
   def self.get_keys loc
-    ukey = "knife[:rackspace_api_username]"
-    akey = "knife[:rackspace_api_key]"
-    rv = {}
-    File.open(self.config loc).each do |line|
-      # kill comments
-      idx = line.index '#'
-      unless idx.nil?
-        line = line[0..idx-1]
-      end
-      if line.start_with? ukey
-        l = line.split '='
-        rv[:username] = l[1].strip[1..-2]
-      end
-      if line.start_with? akey
-        l = line.split '='
-        rv[:apiKey] = l[1].strip[1..-2]
-      end
+    if loc.upcase != 'LON'
+      rv = super({:rackspace_api_username => nil, :rackspace_api_key => nil}, loc)
+      rv[:username] = rv[:rackspace_api_username]
+      rv.delete :rackspace_api_username
+      rv[:apiKey] = rv[:rackspace_api_key]
+      rv.delete :rackspace_api_key
+    else
+      rv = super({:rackspace_lon_api_username => nil, :rackspace_lon_api_key => nil}, loc)
+      rv[:username] = rv[:rackspace_lon_api_username]
+      rv.delete :rackspace_lon_api_username
+      rv[:apiKey] = rv[:rackspace_lon_api_key]
+      rv.delete :rackspace_lon_api_key
     end
     rv
+
   end
 
   def self.curlauth method, loc, endpoint=nil

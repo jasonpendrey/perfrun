@@ -16,7 +16,7 @@ class Provider
     nil
   end
 
-  def self.config loc
+  def self.config
     path = self.keypath || 'config'
     path + '/knife.rb'
   end
@@ -69,6 +69,60 @@ class Provider
     end
   end
 
+  def self.get_keys keys, loc
+    rv = load_knife keys, loc
+    return rv unless rv.nil?
+    # old knife parsing... 
+    if File.exist? self.config
+      File.open(self.config).each do |line|
+        # kill comments
+        idx = line.index '#'
+        unless idx.nil?
+          line = line[0..idx-1]
+        end
+        keys.each_pair do |key, val|
+          if line.start_with? "knife[:#{key}]"
+            l = line.split '='
+            keys[key] = l[1].strip[1..-2]
+          end
+        end
+      end
+    end
+    keys
+  end
+
+  def self.load_knife keys, loc
+    def self.log_level p
+    end
+    def self.log_location p
+    end
+    def self.node_name p
+    end
+    def self.client_key p
+    end
+    def self.chef_server_url p
+    end
+    def self.cache_type p
+    end
+    def self.cache_options p
+    end
+    def self.cookbook_path p
+    end
+
+    knife = {}
+    cfg = File.read self.config
+    begin
+      eval cfg
+    rescue Exception => e
+      puts "knife parse error: #{e.message}"
+      return nil
+    end
+    keys.each_pair do |k,v| 
+      keys[k] = knife[k]
+    end
+    keys
+  end
+  
   def self.log msg
     begin
       File.write logfile, msg+"\n", mode: 'a'
@@ -77,8 +131,7 @@ class Provider
   end
 
   def self.logfile
-    "logs/#{self::CHEF_PROVIDER}.log"
+    "logs/#{self::LOG_PROVIDER}.log"
   end
-
-
 end
+
