@@ -73,7 +73,7 @@ class AzureDriver < Provider
   end
 
   def self.storagename name
-    name.gsub('-', '').downcase
+    name.gsub('-', '').gsub('_', '').downcase
   end
 
   def self._create_server name, scope, instance, loc, keyfile, image
@@ -82,8 +82,7 @@ class AzureDriver < Provider
     burfw = "2200:2200,80:80,443:443,12345:12345,12346:12346"
     server = s.servers.create(:vm_name => name, :image => image, :location => loc, :vm_size => instance, 
                               :private_key_file => keyfile, :vm_user => 'ubuntu', :tcp_endpoints => burfw,
-#                              :storage_account_name => storagename(name))
-                              )
+                              :storage_account_name => storagename(name))
     server
   end
 
@@ -93,27 +92,31 @@ class AzureDriver < Provider
       return if server.state != 'Running'
       if server        
         sname = storagename(server.vm_name)
-        server.destroy
-=begin
+
+        if true
+          virtual_machine_service = Azure::VirtualMachineManagementService.new
+          virtual_machine_service.delete_virtual_machine(server.vm_name, server.vm_name)
+        else
+          # XXX doesn't seem to delete the disk binding... sigh.
+          server.destroy
+        end
         s = get_auth loc
         (0..5).each do |n|
           begin
             acct = s.storage_accounts.get sname
-            puts "#{n+1}: del disk=#{sname} #{acct.inspect}"
+            log "#{n+1}: del storage account=#{sname}"
             rv = acct.destroy
-            puts "after destroy... #{rv.inspect}"
             if rv and rv.include? 'BadRequest'
-              puts "will retry #{sname} in 10 seconds..."
+              log "will retry #{sname} in 10 seconds..."
               sleep 10
             else
               break
             end
           rescue
-            puts "will retry #{sname} in 10 seconds..."
+            log "will retry #{sname} in 10 seconds..."
             sleep 10
           end
         end
-=end
       end
     rescue Exception => e
       log "e=#{e.message}"

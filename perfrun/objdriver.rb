@@ -248,9 +248,9 @@ class ObjDriver
       driver = Object.const_get (prov.camel_case+'Driver')
     rescue Exception => e
       if scope['flavor'] and scope['flavor']['provider']
-        puts "error loading flavor driver: #{prov}"
+        puts "error loading flavor driver: #{prov}: #{e.message}"
       else
-        puts "error loading provider driver: #{prov}"
+        puts "error loading provider driver: #{prov}: #{e.message}"
       end    
       exit 1
     end
@@ -451,7 +451,8 @@ class ObjDriver
     if @autodelete and provider != 'host'
       rv += '-'+(@objlocation || 'no-location')
     end
-    rv.gsub(/[ \/]/, '-')
+    # make dns friendly names
+    rv.gsub(/[ \/_]/, '-')
   end
 
   # driver related calls
