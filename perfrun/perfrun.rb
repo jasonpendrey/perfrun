@@ -424,7 +424,8 @@ class PerfRun
             next if found
             puts "\033[1mrunning kill van...\033[m"
             dbg = @debug ? "--debug" : ''
-            ver = @verbose ? "--verbose" : ''
+            #ver = @verbose ? "--verbose" : ''
+            ver = ''
             cfg = @buildid ? "-b #{@buildid}" : "-c #{@config}"
             apph = @app_host ? "--app-host #{@app_host}" : ""
             out = `./perfrun #{dbg} #{ver} #{cfg} #{apph} --delete`
