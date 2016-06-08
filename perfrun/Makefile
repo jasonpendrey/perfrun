@@ -6,8 +6,8 @@ LOC := /srv/bench-disto/
 
 publish: 
 	cd ../BurUnixBench; mkdir -p tmp
-	cd ../BurUnixBench; cp -f RunRemote $(LOC); make noarch-tar; cp -f tmp/BurUnixBench-noarch.tgz $(LOC)
-	cd ../BurUnixBench; make tar; cp -f tmp/BurUnixBench-$(ARCH)-$(OS).tgz $(LOC)
+	cd ../BurUnixBench; cp -f RunRemote $(LOC); make noarch-tar; sudo cp -f tmp/BurUnixBench-noarch.tgz $(LOC)
+	cd ../BurUnixBench; make tar; sudo cp -f tmp/BurUnixBench-$(ARCH)-$(OS).tgz $(LOC)
 test-publish: 
 	cd ../BurUnixBench; for host in "test" "ops" ; do echo "copying to $$host"; scp $(IDENT) $(LOC)* $(USER)@$$host.burstorm.com:$(LOC); done
 

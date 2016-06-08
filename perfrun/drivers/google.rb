@@ -44,7 +44,7 @@ class GoogleDriver < Provider
   end
 
   def self.get_keys loc
-    gkeys = { :gce_project => nil, :google_json_key_location => nil }
+    gkeys = { :google_project => nil, :google_json_key_location => nil }
     super gkeys, loc
   end
 
