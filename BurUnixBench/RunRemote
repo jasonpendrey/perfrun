@@ -1,5 +1,6 @@
 #!/bin/bash
 #set -x
+PROXY=
 APP_HOST=
 APP_KEY=
 APP_SECRET=
@@ -39,6 +40,10 @@ do
 	PORT="-p $2"
 	shift
 	;;
+    -x|--proxy-url)
+	PROXY="-x $2"
+	shift
+	;;
     -H|--app-host)
 	APP_HOST="$2"
 	shift
@@ -56,7 +61,7 @@ do
        shift
        ;;
     -h|--help)
-        echo "RunRemote [-i ident -p password -O objective -I instance -H host -K burstorm-app-key -S burstorm-app-secret] [user@host]"
+        echo "RunRemote [-i ident -p password -O objective -I instance -H host -K burstorm-app-key -S burstorm-app-secret -x proxy-url] [user@host]"
 	exit 0
 	;;
     *)
@@ -74,7 +79,7 @@ if [ "$APP_KEY" != "" -a "$APP_SECRET" != "" ]; then
 fi
 #DOWNLOAD_HOST=$APP_HOST
 DOWNLOAD_HOST=staging.burstorm.com
-CMD="TAR=\"${DISTO}-\`uname -m\`-\`uname\`.tgz\"; rm -rf \${TAR} ${DISTO}; which wget > /dev/null; wgs=\$?; which curl > /dev/null; cls=\$?; if [ \"\$cls\" = '0' ]; then curl -o \${TAR} https://${DOWNLOAD_HOST}/bench-disto/\${TAR}; elif [ \"\$wgs\" = '0' ]; then wget -q -O \${TAR} https://${DOWNLOAD_HOST}/bench-disto/\${TAR}; else echo 'neither curl or wget are installed. giving up.'; exit 1; fi; tar xzf \${TAR}; cd ${DISTO}; ./ub -i 1 $APP -I '$INSTANCE' -O '$OBJECTIVE' $CREATE_TIME"
+CMD="TAR=\"${DISTO}-\`uname -m\`-\`uname\`.tgz\"; rm -rf \${TAR} ${DISTO}; which wget > /dev/null; wgs=\$?; which curl > /dev/null; cls=\$?; if [ \"\$cls\" = '0' ]; then curl -o \${TAR} ${PROXY} https://${DOWNLOAD_HOST}/bench-disto/\${TAR}; elif [ \"\$wgs\" = '0' ]; then wget -q -O \${TAR} https://${DOWNLOAD_HOST}/bench-disto/\${TAR}; else echo 'neither curl or wget are installed. giving up.'; exit 1; fi; tar xzf \${TAR}; cd ${DISTO}; ./ub -i 1 $APP -I '$INSTANCE' -O '$OBJECTIVE' $PROXY $CREATE_TIME"
 # execute locally
 SSHOPTS="-o LogLevel=quiet -oStrictHostKeyChecking=no -oBatchMode=yes"
 if [ "$SSH_HOST" = "" ]; then

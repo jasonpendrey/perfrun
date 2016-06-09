@@ -104,6 +104,7 @@ class PerfRun
     opts[:autodelete] = true
     opts[:test_connection] = true
     opts[:app_host] = @app_host if @app_host
+    opts[:proxy] = @proxy if @proxy
     if @mode == 'run' or @mode == 'delete'
       curthread = {started_at:Time.now, prov: prov, loc: loc}
       curthread[:thread] = Thread.new {    
@@ -150,6 +151,9 @@ class PerfRun
     end
     if ARGV.length > 0
       OptionParser.new do |o|
+        o.on('--proxy URL') { |b|
+          @proxy = b
+        }
         o.on('--app_host HOST') { |b|
           @app_host = b
         }

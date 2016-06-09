@@ -38,6 +38,7 @@ class ObjDriver
     @objlocation = object['provider']['location_flavor'] || object['provider']['address'] || '--no location--'
     @started_at = Time.now if @mode == 'run'
     @app_host = opts[:app_host] if opts[:app_host]
+    @proxy = opts[:proxy] if opts[:proxy]
     @errorinsts = [] if @mode == 'run'
     @threads = []
     @mutex = Mutex.new
@@ -289,7 +290,12 @@ class ObjDriver
 
 
   def perfrun scope, flavor, ip, cretime=nil
-    cmd = "(./RunRemote -I '#{scopename(scope)}' -O '#{scope['id']}' -i '#{File.expand_path flavor['keyfile']}' -H '#{@app_host}' -K #{APP_KEY} -S #{APP_SECRET} --create-time #{cretime} --port #{flavor['sshport']} #{flavor['login_as']}@#{ip})  >> #{logfile} 2>&1"
+    if @proxy
+      proxy = "-x '#{@proxy}'"
+    else
+      proxy = ''
+    end
+    cmd = "(./RunRemote -I '#{scopename(scope)}' -O '#{scope['id']}' -i '#{File.expand_path flavor['keyfile']}' -H '#{@app_host}' -K #{APP_KEY} -S #{APP_SECRET} #{proxy} --create-time #{cretime} --port #{flavor['sshport']} #{flavor['login_as']}@#{ip})  >> #{logfile} 2>&1"
     log "cmd=#{cmd}" if @verbose > 0    
     for i in 0..1 do
       break if @aborted

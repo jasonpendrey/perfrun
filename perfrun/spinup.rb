@@ -41,6 +41,7 @@ class Spinup
     opts[:maxjobs] = @maxjobs
     opts[:scopes] = scopes
     opts[:app_host] = @app_host if @app_host
+    opts[:proxy] = @proxy if @proxy
     puts "#{@mode.capitalize} #{obj['name']}@#{prov}/#{loc} using #{@config}"
     if @mode == 'run' or @mode == 'delete'
       curthread = {started_at:Time.now, prov: prov, loc: loc}
@@ -84,6 +85,9 @@ class Spinup
     @config_string = nil
     if ARGV.length > 0
       OptionParser.new do |o|
+        o.on('--proxy URL') { |b|
+          @proxy = b
+        }
         o.on('--app_host HOST') { |b|
           @app_host = b
         }

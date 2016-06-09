@@ -831,6 +831,9 @@ sub preChecks {
 
     if ($params->{'user'} && $params->{'pass'}) {
 	my $ua = LWP::UserAgent->new; 
+        if ($params->{'proxy'}) {        
+            $ua->proxy('http', $params->{'proxy'});
+        }
 	my $req = POST $http_proto . '://' . $params->{'host'} . '/api/perfs.json', [ ping => ''], Authorization => 'Basic ' . encode_base64($params->{'user'} . ':' . $params->{'pass'});
         my $rv = $ua->request($req)->decoded_content ();
 	chomp $rv;
@@ -892,6 +895,8 @@ sub parseArgs {
             $params->{'instance_type'} = shift(@words);
         } elsif ($word eq "-h") {
             $params->{'host'} = shift(@words);
+        } elsif ($word eq "-x") {
+            $params->{'proxy'} = shift(@words);
         } elsif ($word eq "-C") {
             $params->{'create_time'} = shift(@words);
         } elsif ($word eq "-i") {
@@ -2019,7 +2024,7 @@ sub runFooterJSON {
 
 sub postJSON {
     chdir($BASEDIR);
-    my ( $report, $host, $api_key, $api_secret ) = @_;
+    my ( $report, $host, $api_key, $api_secret, $proxy ) = @_;
     if (! $api_key || ! $api_secret) {
 	print "no h=$host k=$api_key s=$api_secret\n";
 	return;
@@ -2028,6 +2033,9 @@ sub postJSON {
     my $json = join("", <FILE>); 
     close FILE;
     my $ua = LWP::UserAgent->new; 
+    if ($proxy) {        
+        $ua->proxy('http', $proxy);
+    }    
     my $req = POST $http_proto . '://' . $host . '/api/perfs.json', [ data => $json], Authorization => 'Basic ' . encode_base64($api_key . ':' . $api_secret);
     print "post status=" . $ua->request($req)->decoded_content () . "\n";
 }
@@ -2116,7 +2124,7 @@ sub main {
     close($reportFd);
     close($reportFd2);
     close($reportFd3);
-    postJSON($reportFile . ".json", $params->{'host'}, $params->{'user'}, $params->{'pass'});
+    postJSON($reportFile . ".json", $params->{'host'}, $params->{'user'}, $params->{'pass'}, $params->{'proxy'});
 
     # Display the report, if not in quiet mode.
     if ($verbose > 0) {
