@@ -39,6 +39,7 @@ class ObjDriver
     @started_at = Time.now if @mode == 'run'
     @app_host = opts[:app_host] if opts[:app_host]
     @proxy = opts[:proxy] if opts[:proxy]
+    @perfrun = opts[:perfrun]
     @errorinsts = [] if @mode == 'run'
     @threads = []
     @mutex = Mutex.new
@@ -110,7 +111,7 @@ class ObjDriver
                     log "#{fullname}: deleting..."
                     curthread[:state] = 'deleting'
                     driver[:driver].delete_server(fullname, server[:id], @objlocation, flavor)
-                    if flavor['provisioning'] == 'chef'
+                    if flavor['provisioning'] == 'chef' and ! @perfrun
                       ChefDriver.delete_node(fullname) 
                     end    
                   end
@@ -137,7 +138,7 @@ class ObjDriver
                 start = Time.now
                 puts "deleting #{fullname}/#{aline[:id]}" if @mode == 'delete'
                 driver[:driver].delete_server(fullname, aline[:id], @objlocation, flavor)
-                if flavor['provisioning'] == 'chef'
+                if flavor['provisioning'] == 'chef' and ! @perfrun
                   ChefDriver.delete_node(fullname) 
                 end    
                 block.call({action: 'deleted', name: fullname, scope: scope, flavor: flavor, id: aline[:id], ip: aline[:ip], runtime: Time.now-start}) if block
@@ -166,12 +167,12 @@ class ObjDriver
           curthread[:thread] = Thread.new {
             begin
               curthread[:thread] = Thread.current
-              if ! flavor['provisioning'].blank? and (driver[:provider] == 'host' or server[:created_at])
+              if ! flavor['provisioning'].blank? and (driver[:provider] == 'host' or server[:created_at]) and ! @perfrun
                 log "Provisioning #{fullname} with #{flavor['provisioning']}"
                 case flavor['provisioning']
                 when 'chef'
                   begin 
-                    ChefDriver.bootstrap(host, fullname, provisioning_tags(scope), flavor, @objlocation, driver[:driver].config(@objlocation) )
+                    ChefDriver.bootstrap(host, fullname, provisioning_tags(scope), flavor, @objlocation, driver[:driver].config )
                   rescue  Exception => e
                     puts "chef err: #{e.message}"
                     puts e.backtrace.join "\n"

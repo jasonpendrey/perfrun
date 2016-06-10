@@ -105,6 +105,7 @@ class PerfRun
     opts[:test_connection] = true
     opts[:app_host] = @app_host if @app_host
     opts[:proxy] = @proxy if @proxy
+    opts[:perfrun] = true
     if @mode == 'run' or @mode == 'delete'
       curthread = {started_at:Time.now, prov: prov, loc: loc}
       curthread[:thread] = Thread.new {    
