@@ -832,7 +832,7 @@ sub preChecks {
     if ($params->{'user'} && $params->{'pass'}) {
 	my $ua = LWP::UserAgent->new; 
         if ($params->{'proxy'}) {        
-            $ua->proxy('http', $params->{'proxy'});
+            $ua->proxy(['http', 'https'], $params->{'proxy'});
         }
 	my $req = POST $http_proto . '://' . $params->{'host'} . '/api/perfs.json', [ ping => ''], Authorization => 'Basic ' . encode_base64($params->{'user'} . ':' . $params->{'pass'});
         my $rv = $ua->request($req)->decoded_content ();
@@ -2034,7 +2034,7 @@ sub postJSON {
     close FILE;
     my $ua = LWP::UserAgent->new; 
     if ($proxy) {        
-        $ua->proxy('http', $proxy);
+        $ua->proxy(['http', 'https'], $proxy);
     }    
     my $req = POST $http_proto . '://' . $host . '/api/perfs.json', [ data => $json], Authorization => 'Basic ' . encode_base64($api_key . ':' . $api_secret);
     print "post status=" . $ua->request($req)->decoded_content () . "\n";
