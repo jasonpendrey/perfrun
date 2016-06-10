@@ -63,6 +63,15 @@ This will take a while... approximately 15 minutes or so. Get cup of coffee.
 
 **Note:** you can run many different tests from the same control host using different configuration files. You can change the configuration file using the --config switch to perfrun.
 
+### Using an HTTP Proxy
+
+Perfrun requires that the servers under test be able to upload test results to the Burstorm servers.
+If your servers under test are walled off from outgoing HTTP requests and require using a HTTP proxy to access other servers on the Internet, you can specify the URL of the proxy using the --proxy option to perfrun. For example:
+
+$ ./perfrun --verbose --proxy http://localhost:8080 --build 'your-build-name'
+
+will instruct perfrun to use the proxy located on your local host listening on port 8080.
+
 ## Viewing the Results
 
 Once it completes, you can go back into the Burstorm App to view the results. In this case, we're looking at a Burstorm perfrun of some of our developer machines:
