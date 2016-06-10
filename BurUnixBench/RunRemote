@@ -43,7 +43,7 @@ do
 	;;
     -x|--proxy-url)
 	PROXY="-x $2"
-        WGET_PROXY="http_proxy='$2 https_proxy='$2'"
+        WGET_PROXY="http_proxy='$2' https_proxy='$2'"
 	shift
 	;;
     -H|--app-host)
