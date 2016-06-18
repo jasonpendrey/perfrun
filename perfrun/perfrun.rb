@@ -144,12 +144,17 @@ class PerfRun
     @nperperiod = 1     # number of times to run in the period
     @hoursperday = 24   # number of hours to use per day
     @sleeptmo = 60*30   # wake timeout to check on progress    
+    @proxy = nil
     @mutex = Mutex.new
     $LOAD_PATH.push "#{Dir.pwd}/config"
     begin
       load CRED_CONFIG
     rescue
     end
+    @proxy = $proxy if $proxy
+    @verbose = $verbose if $verbose
+    @period = $period if $period
+    @nperperiod = $nperperiod if $nperperiod
     if ARGV.length > 0
       OptionParser.new do |o|
         o.on('--proxy URL') { |b|

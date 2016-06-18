@@ -9,13 +9,7 @@ use HTTP::Request::Common qw(POST);
 use LWP::UserAgent;
 use MIME::Base64;
 
-my $http_proto;
-if (0) {
-    $http_proto='http';
-} else {
-#    use LWP::Protocol::https;
-    $http_proto='https';
-}
+#use LWP::Protocol::https;
 
 ############################################################################
 #  UnixBench - Release 5.1.3, based on:
@@ -778,7 +772,7 @@ sub getSystemInfo {
     }
 
     # Get graphics hardware info.
-    $info->{'graphics'} = getCmdOutput("3dinfo | cut -f1 -d\'(\'");
+    $info->{'graphics'} = getCmdOutput("(3dinfo | cut -f1 -d\'(\') 2>/dev/null");
     my $mem = `free`;
     my @memv = split("\n", $mem);
     @memv = split(' ', $memv[1]);
@@ -830,13 +824,38 @@ sub preChecks {
     $ENV{'LANG'} = $language;
 
     if ($params->{'user'} && $params->{'pass'}) {
-	my $ua = LWP::UserAgent->new; 
-        if ($params->{'proxy'}) {        
-            $ua->proxy(['http', 'https'], $params->{'proxy'});
+        my $url = 'https://' . $params->{'host'} . '/api/perfs.json';
+        my $rv = '';
+        eval {
+            my $ua = LWP::UserAgent->new; 
+            if ($params->{'proxy'}) {        
+                $ua->proxy(['http', 'https'], $params->{'proxy'});
+            }
+            my $req = POST $url, [ ping => ''], Authorization => 'Basic ' . encode_base64($params->{'user'} . ':' . $params->{'pass'});
+            $rv = $ua->request($req)->decoded_content ();
+        };
+        # make certain it didn't fail, and that it passingly resembles json
+        if (index($rv, "{\"") != 0) { 
+            print("LWP failed me. Trying curl...\n");
+            my $proxy = '';
+            if ($params->{'proxy'}) {
+                $proxy = "-x $params->{'proxy'}";
+            }
+            my $cmd = "curl -q -X POST -F 'ping=' -u $params->{'user'}:$params->{'pass'} $proxy $url 2>/dev/null";
+            $rv = `$cmd`;
         }
-	my $req = POST $http_proto . '://' . $params->{'host'} . '/api/perfs.json', [ ping => ''], Authorization => 'Basic ' . encode_base64($params->{'user'} . ':' . $params->{'pass'});
-        my $rv = $ua->request($req)->decoded_content ();
-	chomp $rv;
+        if (index($rv, "{\"") != 0) { 
+            print("curl failed me again. Trying wget...\n");
+            my $proxy = '';
+            if ($params->{'proxy'}) {
+                $proxy = "export https_proxy=$params->{'proxy'}; ";
+            }
+            my $auth = 'Basic ' . encode_base64($params->{'user'} . ':' . $params->{'pass'});
+            chomp $auth;
+            my $cmd = "${proxy}wget -O- --post-data 'ping=' --header 'Authorization: $auth' $url 2>/dev/null";
+            $rv = `$cmd`;
+        }
+        chomp $rv;
 	if ($rv ne '{"status":"success","message":"pong"}') {
 	    print "\n\nbad result contacting host: "  . $rv . "\n";
 	    exit 1
@@ -1903,12 +1922,18 @@ sub displaySystemJSON {
     }
     printf $fd "\n";
     # provider and instance type info
-    printf $fd ' "objective":"%s", ', $params->{'objective'};
-    printf $fd "\n";
-    printf $fd ' "instance_type":"%s", ', $params->{'instance_type'};
-    printf $fd "\n";
-    printf $fd ' "instance_create_time":"%s", ', $params->{'create_time'};
-    printf $fd "\n";
+    if ($params->{'objective'}) {
+        printf $fd ' "objective":"%s", ', $params->{'objective'};
+        printf $fd "\n";
+    }
+    if ($params->{'instance_type'}) {
+        printf $fd ' "instance_type":"%s", ', $params->{'instance_type'};
+        printf $fd "\n";
+    }
+    if ($params->{'create_time'}) {
+        printf $fd ' "instance_create_time":"%s", ', $params->{'create_time'};
+        printf $fd "\n";
+    }
     # Display graphics hardware info.
     if ($info->{'graphics'}) {
         printf $fd ' "graphics": "%s", ', $info->{'graphics'};
@@ -2029,15 +2054,44 @@ sub postJSON {
 	print "no h=$host k=$api_key s=$api_secret\n";
 	return;
     }
-    open FILE, $report or die "Couldn't open file: $!"; 
-    my $json = join("", <FILE>); 
-    close FILE;
-    my $ua = LWP::UserAgent->new; 
-    if ($proxy) {        
-        $ua->proxy(['http', 'https'], $proxy);
+    my $rv = '';
+    my $url = 'https://' . $host . '/api/perfs.json';
+    eval {
+        open FILE, $report or die "Couldn't open file: $!"; 
+        my $json = join("", <FILE>); 
+        close FILE;
+        my $ua = LWP::UserAgent->new; 
+        if ($proxy) {        
+            $ua->proxy(['http', 'https'], $proxy);
+        }    
+        my $req = POST $url, [ data => $json], Authorization => 'Basic ' . encode_base64($api_key . ':' . $api_secret);
+        $rv = $ua->request($req)->decoded_content ();
+    };
+    if (index($rv, "{\"") != 0) { 
+        print("LWP failed me. Trying curl...\n");
+        if ($proxy) {
+            $proxy = "-x $proxy";
+        } else {
+            $proxy = '';
+        }
+        my $cmd = "curl -q -X POST -F 'data=\@${report}' -u $api_key:$api_secret $proxy $url 2>/dev/null";
+        $rv = `$cmd`;
+    }
+    if (index($rv, "{\"") != 0) { 
+        print("curl failed me. Trying wget...\n");
+        my $proxy = '';
+        if ($proxy) {
+            $proxy = "export https_proxy=$proxy; ";
+        }
+        my $auth = 'Basic ' . encode_base64($api_key . ':' . $api_secret);
+        open FILE, $report or die "Couldn't open file: $!"; 
+        my $json = join("", <FILE>); 
+        close FILE;
+        chomp $auth;
+        my $cmd = "${proxy}wget -O- --post-data 'data=$json' --header 'Authorization: $auth' $url 2>/dev/null";
+        $rv = `$cmd`;
     }    
-    my $req = POST $http_proto . '://' . $host . '/api/perfs.json', [ data => $json], Authorization => 'Basic ' . encode_base64($api_key . ':' . $api_secret);
-    print "post status=" . $ua->request($req)->decoded_content () . "\n";
+    print "post status=" . $rv . "\n";
 }
 
 
