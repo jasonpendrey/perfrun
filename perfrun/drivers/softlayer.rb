@@ -6,7 +6,7 @@ class SoftlayerDriver < Provider
   MAXJOBS = 1
   PROVIDER_ID = 574
   LOGIN_AS = 'root'
-  DEFIMAGE = '02d88f3c-8adb-497d-8e76-c7d80a27ed57'
+  DEFIMAGE = 'UBUNTU_LATEST'
 
   def self.get_active location, all, &block
     s = get_auth location
@@ -60,7 +60,7 @@ class SoftlayerDriver < Provider
     s = get_auth loc
     k = s.key_pairs.get(keyname)
     sparams = { :name => name, 
-      :image_id => image,  
+      :os_code => image,  
       :datacenter => loc,
       :key_pairs => [k]
     }
@@ -71,9 +71,8 @@ class SoftlayerDriver < Provider
       ram = (scope['ram'].to_f) * 1024
       sparams[:cpu] = cpu
       sparams[:ram] = ram
-      #   needs os_code instead of an image_id... 
-      #          sparams[:ephemeral_storage] = true
-      #          sparams[:disk] = [{'device' => 0, 'diskImage' => {'capacity' => storage } }]
+      sparams[:ephemeral_storage] = true
+      sparams[:disk] = [{'device' => 0, 'diskImage' => {'capacity' => storage } }]
     else
       sparams[:flavor_id] = instance
     end
