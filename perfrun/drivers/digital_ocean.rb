@@ -60,6 +60,8 @@ class DigitalOceanDriver < Provider
   end
 
   def self.get_image loc
+    return @ubuntuimage = 'ubuntu-14-04-x64'
+=begin
     if @ubuntuimage and @fetchtime+3600 > Time.now
       return @ubuntuimage 
     end
@@ -70,6 +72,7 @@ class DigitalOceanDriver < Provider
       return @ubuntuimage = img.slug
     end
     return nil
+=end
   end
 
 end
