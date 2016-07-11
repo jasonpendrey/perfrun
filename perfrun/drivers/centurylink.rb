@@ -192,9 +192,9 @@ class CenturylinkDriver < Provider
     ram = (scope['ram'].to_f)
     storage = scope['storage'] || 20
     storage = 20 if storage < 20
-    if (! scope.is_virtualized and ! scope.is_shared)
+    if (! scope['is_virtualized'] and ! scope['is_shared'])
       vtype = 'bareMetal'
-    elsif scope.seek_tech == 1
+    elsif scope['seek_tech'] == 1
       vtype = 'hyperscale'
     else
       vtype = 'standard'
