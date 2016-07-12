@@ -21,22 +21,25 @@ class CenturylinkDriver < Provider
             ip = ipline['public']
           end
         end
-        yield server['id'], server['name'], ip, server['status']
+        yield server['id'], server['description'], ip, server['status']
       end
     end
   end	     
 
+  def self.vmname name
+    name[0..6]
+  end
+
   def self.create_server name, scope, flavor, loc
-    name = name[0..6]
     get_auth loc
     image = flavor['imageid']
     image = DEFIMAGE if image.blank?
     server = self._create_server name, scope, loc, image
-    pass = server['password']
     if server.nil?
       log "can't create #{name}: #{server}"
       return nil
     end
+    pass = server['password']
     stslink = nil
     idlink = nil
     server['links'].each do |link|
@@ -55,34 +58,14 @@ class CenturylinkDriver < Provider
       log "can't get id for #{name}: #{server.inspect}"
       return nil
     end
-    tmo = 0
-    sleeptime = 5
-    while true do
-      sts = execcmd "#{curlauth 'GET', 'operations'}/status/#{stslink['id']}"    
-      puts "sts=#{sts.inspect}"
-      break if sts['status'] == 'succeeded'
-      if sts['message']
-        log "#{name}: server create: failed: #{sts['message']}"
-        return nil
-      end
-      if sts['status'] == 'failed'
-        log "#{name}: #{server.inspect}: failed"
-        return nil
-      end
-      sleep sleeptime
-      tmo += sleeptime
-      if tmo > 600
-        log "#{name}: #{server.inspect}: timed out"
-        return nil
-      end
-    end
+    return nil unless wait_for "#{curlauth 'GET', 'operations'}/status/#{stslink['id']}"    
     server = fetch_server idlink['id'], true
     server = add_ip server
     return nil if server.nil?
+    server[:name] = server['description']
     server[:pass] = pass
     server[:ip] = server['public_ip']
     server[:id] = server['name']
-    puts "create done: #{server.inspect}"
     server
   end
 
@@ -97,27 +80,8 @@ class CenturylinkDriver < Provider
   def self.add_ip server
     fw = { "ports":[{"protocol":"TCP", "port":22}, {"protocol":"ICMP", "port":0}]}
     stslink = execcmd "#{curlauth 'POST', 'servers'}/#{server['name']}/publicIPAddresses -d '#{fw.to_json}'" 
-    tmo = 0
-    sleeptime = 5
-    while true do
-      sts = execcmd "#{curlauth 'GET', 'operations'}/status/#{stslink['id']}"
-      puts "sts=#{sts.inspect}"
-      break if sts['status'] == 'succeeded'
-      if sts['status'] == 'failed'
-        log "#{server['name']}: ipadd: failed"
-        return nil
-      end
-      if sts['message']
-        log "#{server['name']}: ipadd: failed: #{sts['message']}"
-        return nil
-      end
-      sleep sleeptime
-      tmo += sleeptime
-      if tmo > 600
-        log "#{server['name']}: ipadd: timed out"
-        return nil
-      end
-    end
+    return nil if ! stslink
+    return nil unless wait_for "#{curlauth 'GET', 'operations'}/status/#{stslink['id']}"
     server = fetch_server server['name']
     ip = nil
     if server['details'] and server['details']['ipAddresses']
@@ -151,7 +115,8 @@ class CenturylinkDriver < Provider
       end
       rv = JSON.parse(out)
       if rv['message']
-        log "#{cmd} returned error: #{rv['message']}"
+        log "curl returned error: #{rv['message']}"
+        log " cmd=#{cmd}"
         return nil
       end
     rescue Exception => e
@@ -160,6 +125,28 @@ class CenturylinkDriver < Provider
       nil
     end
     rv
+  end
+
+  def self.wait_for cmd
+    tmo = 0
+    sleeptime = 5
+    while true do
+      sts = execcmd cmd
+      if sts
+        break if sts['status'] == 'succeeded'
+        if sts['status'] == 'failed' or sts['message']
+          log "cmd failed: sts=#{sts['status']} msg=#{sts['message']}"
+          return nil
+        end
+      end
+      sleep sleeptime
+      tmo += sleeptime
+      if tmo > 600
+        log "#{cmd}: timed out"
+        return nil
+      end
+    end
+    true
   end
 
   def self.get_auth loc=nil
@@ -189,7 +176,7 @@ class CenturylinkDriver < Provider
   def self._create_server name, scope, loc, image
     get_auth loc
     cpu = scope['cores'] || 1
-    ram = (scope['ram'].to_f)
+    ram = scope['ram'] || 2
     storage = scope['storage'] || 20
     storage = 20 if storage < 20
     if (! scope['is_virtualized'] and ! scope['is_shared'])
@@ -200,13 +187,15 @@ class CenturylinkDriver < Provider
       vtype = 'standard'
     end
     pass = gen_pass(20)+'aA1$'
-    opts = {:name => name, :groupId => @keys[:centurylink_groupid], :sourceServerId => image,
+    opts = {:name => vmname(name), :description => name, :groupId => @keys[:centurylink_groupid], :sourceServerId => image,
       :cpu => cpu, :memoryGB => ram,
       :type => vtype,
       :password => pass,
     }      
     server = execcmd( cmd = "#{curlauth 'POST', 'servers'} -d '#{opts.to_json}'")
-    server['password'] = pass
+    if server
+      server['password'] = pass
+    end
     server
   end
 
