@@ -325,7 +325,7 @@ class PerfRun
       end
       next if found
       rv.push({run_at: time, day: day, hour: hour})
-      n-= 1
+      n -= 1
     end
     rv
   end
